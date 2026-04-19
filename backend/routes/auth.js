@@ -5,6 +5,8 @@ const User = require('../models/User');
 const axios = require('axios');
 
 const router = express.Router();
+const LOGIN_TOKEN_TTL = '1d';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-me';
 
 /** When profile is requested for this email and no user exists, create a minimal dev user (auth-off / local dev). */
 const DEV_AUTO_EMAIL = (process.env.DEV_AUTO_EMAIL || 'dev@musicratingapp.local').toLowerCase();
@@ -35,6 +37,114 @@ async function ensureDevUserByEmail(emailRaw) {
   }
 }
 
+function normalizeEmail(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase();
+}
+
+function buildAuthUser(user) {
+  return {
+    id: user._id.toString(),
+    username: user.username || '',
+    email: user.email,
+    created_at: user.created_at || user.createdAt,
+  };
+}
+
+function getAuthToken(req) {
+  const header = req.get('authorization') || '';
+  const [scheme, token] = header.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return '';
+  return token.trim();
+}
+
+async function buildProfileResponse(user) {
+  const followingUsersRaw = await User.find({ _id: { $in: user.following } }).select('name username email _id profilePic');
+  const followingUsers = followingUsersRaw.map((u) => ({
+    _id: u._id,
+    name: u.name || 'Unknown',
+    username: u.username || 'unknown',
+    email: u.email || '',
+    profilePic: u.profilePic || '/default-avatar.jpeg',
+  }));
+
+  const followersRaw = await User.find({ following: user._id }).select('name username email _id profilePic');
+  const followers = followersRaw.map((u) => ({
+    _id: u._id,
+    name: u.name || 'Unknown',
+    username: u.username || 'unknown',
+    email: u.email || '',
+    profilePic: u.profilePic || '/default-avatar.jpeg',
+  }));
+
+  return {
+    id: user._id.toString(),
+    username: user.username || '',
+    name: user.name,
+    email: user.email,
+    favoriteArtists: user.favoriteArtists,
+    favoriteSongs: user.favoriteSongs,
+    ratedAlbums: user.ratedAlbums || [],
+    created_at: user.created_at || user.createdAt,
+    createdAt: user.created_at || user.createdAt,
+    joined: user.created_at || user.createdAt,
+    following: followingUsers,
+    followers,
+    profilePic: user.profilePic || '',
+  };
+}
+
+async function requireAuth(req, res, next) {
+  const token = getAuthToken(req);
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(payload.userId);
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid session' });
+    }
+    req.auth = payload;
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid session' });
+  }
+}
+
+function normalizeUsername(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/^[_.-]+|[_.-]+$/g, '')
+    .slice(0, 24);
+}
+
+function displayNameFromEmail(email) {
+  const localPart = String(email || '').split('@')[0] || 'listener';
+  return localPart
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+async function generateUniqueUsername(baseValue) {
+  const base = normalizeUsername(baseValue) || 'listener';
+  let candidate = base;
+  let suffix = 1;
+
+  while (await User.exists({ username: candidate })) {
+    const suffixText = String(suffix++);
+    const trimmedBase = base.slice(0, Math.max(1, 24 - suffixText.length - 1));
+    candidate = `${trimmedBase}_${suffixText}`;
+  }
+
+  return candidate;
+}
+
 // Helper to get Spotify token
 async function getSpotifyToken() {
   if (global.spotifyToken && global.spotifyTokenExpires > Date.now()) return global.spotifyToken;
@@ -54,22 +164,49 @@ async function getSpotifyToken() {
 
 // Signup
 router.post('/signup', async (req, res) => {
-  const { username, name, email, password, favoriteArtists, favoriteSongs, profilePic } = req.body;
+  const email = normalizeEmail(req.body.email);
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  const name = String(req.body.name || '').trim();
+  const requestedUsername = normalizeUsername(req.body.username);
+  const favoriteArtists = Array.isArray(req.body.favoriteArtists) ? req.body.favoriteArtists : [];
+  const favoriteSongs = Array.isArray(req.body.favoriteSongs) ? req.body.favoriteSongs : [];
+  const profilePic = typeof req.body.profilePic === 'string' ? req.body.profilePic : '';
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters' });
+  }
+
   try {
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
-    const hashedPassword = await bcrypt.hash(password, 10);
+
+    if (requestedUsername) {
+      const existingUsername = await User.findOne({ username: requestedUsername });
+      if (existingUsername) {
+        return res.status(400).json({ message: 'Username is already taken' });
+      }
+    }
+
+    const username = requestedUsername || await generateUniqueUsername(email.split('@')[0]);
+
     const user = new User({
       username,
-      name,
+      name: name || displayNameFromEmail(email),
       email,
-      password: hashedPassword,
-      favoriteArtists: favoriteArtists || [],
-      favoriteSongs: favoriteSongs || [],
-      profilePic: profilePic || ''
+      password,
+      favoriteArtists,
+      favoriteSongs,
+      profilePic,
     });
     await user.save();
-    res.status(201).json({ message: 'User created successfully' });
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: buildAuthUser(user),
+    });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -77,15 +214,44 @@ router.post('/signup', async (req, res) => {
 
 // Login
 router.post('/login', async (req, res) => {
-  const { identifier, password } = req.body;
+  const email = normalizeEmail(req.body.email || req.body.identifier);
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required' });
+  }
+
   try {
-    const user = await User.findOne({ $or: [ { email: identifier }, { username: identifier } ] });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+    const user = await User.findOne({ email }).select('+password');
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
-    res.json({ token, user: { username: user.username, email: user.email, id: user._id } });
+    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+
+    if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ message: 'Authentication is not configured correctly' });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id.toString(), email: user.email },
+      JWT_SECRET,
+      { expiresIn: LOGIN_TOKEN_TTL }
+    );
+
+    res.json({
+      token,
+      user: buildAuthUser(user),
+    });
   } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const profile = await buildProfileResponse(req.user);
+    res.json(profile);
+  } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -125,37 +291,8 @@ router.get('/profile', async (req, res) => {
       return res.status(400).json({ message: 'Missing id or email' });
     }
     if (!user) return res.status(404).json({ message: 'User not found' });
-    // Get following users
-    const followingUsersRaw = await User.find({ _id: { $in: user.following } }).select('name username email _id profilePic');
-    const followingUsers = followingUsersRaw.map(u => ({
-      _id: u._id,
-      name: u.name || 'Unknown',
-      username: u.username || 'unknown',
-      email: u.email || '',
-      profilePic: u.profilePic || '/default-avatar.jpeg'
-    }));
-    // Get followers (users who have this user in their following array)
-    const followersRaw = await User.find({ following: user._id }).select('name username email _id profilePic');
-    const followers = followersRaw.map(u => ({
-      _id: u._id,
-      name: u.name || 'Unknown',
-      username: u.username || 'unknown',
-      email: u.email || '',
-      profilePic: u.profilePic || '/default-avatar.jpeg'
-    }));
-    res.json({
-      id: user._id.toString(),
-      username: user.username,
-      name: user.name,
-      email: user.email,
-      favoriteArtists: user.favoriteArtists,
-      favoriteSongs: user.favoriteSongs,
-      ratedAlbums: user.ratedAlbums || [],
-      joined: user.createdAt,
-      following: followingUsers,
-      followers: followers,
-      profilePic: user.profilePic || ''
-    });
+    const profile = await buildProfileResponse(user);
+    res.json(profile);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -332,7 +469,7 @@ router.patch('/change-credentials', async (req, res) => {
   const { email, currentPassword, newPassword, newEmail } = req.body;
   if (!email || !currentPassword) return res.status(400).json({ message: 'Missing email or current password' });
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
@@ -344,8 +481,7 @@ router.patch('/change-credentials', async (req, res) => {
     }
     // Update password if provided
     if (newPassword) {
-      const hashed = await bcrypt.hash(newPassword, 10);
-      user.password = hashed;
+      user.password = newPassword;
     }
     await user.save();
     res.json({ message: 'Credentials updated successfully' });

@@ -16,6 +16,11 @@
   font-display: swap;
 }
 
+/* Avoid nav / app-shell width jumping when Search adds a vertical scrollbar */
+html {
+  scrollbar-gutter: stable;
+}
+
 :root {
   --font-ui: 'Graphik', 'Inter', system-ui, sans-serif;
   --font-heading: 'Tiempos', Georgia, 'Times New Roman', serif;
@@ -46,6 +51,43 @@ body,
   font-size: 18px;
 }
 
+/* One column width for title, nav, and Diary / Search / Lists */
+.app-shell {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+  position: relative;
+}
+.app-shell > h1 {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.app-logout {
+  position: absolute;
+  top: 0.5rem;
+  right: 16px;
+  min-width: auto;
+  min-height: auto;
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border-color: rgba(139, 74, 74, 0.28);
+  background: rgba(202, 210, 197, 0.8);
+  color: var(--color-danger);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 6px rgba(47, 62, 70, 0.12);
+}
+
+.app-logout:hover {
+  background: rgba(202, 210, 197, 0.95);
+  color: #733535;
+}
+
 h1,
 h2,
 h3 {
@@ -71,46 +113,80 @@ nav {
   font-family: var(--font-ui);
   background: var(--color-card);
   border: 1px solid var(--color-border);
-  padding: 1em 2em;
+  padding: 0.65em 0.75em;
   border-radius: 16px;
-  margin: 1.5em auto 2em auto;
+  margin: 1.5em 0 2em 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 2em;
+  justify-content: flex-start;
+  gap: 1em;
   box-shadow: 0 2px 12px rgba(30, 45, 30, 0.15);
-  max-width: 800px;
-  min-width: 350px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  min-width: 0;
   font-size: 1.1em;
   position: relative;
 }
 
 .nav-main {
-  display: flex;
-  gap: 2em;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 1 1 0%;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  align-items: stretch;
+  gap: 0.35em;
 }
 
-.nav-secondary {
+nav .nav-main__link,
+nav .nav-main__link:link,
+nav .nav-main__link:visited {
+  min-width: 0;
+  width: 100%;
+  min-height: 2.75rem;
+  text-align: center;
   display: flex;
-  gap: 1em;
-  margin-left: 2em;
   align-items: center;
-  border-left: 2px solid var(--color-border);
-  padding-left: 2em;
-}
-
-nav a {
+  justify-content: center;
+  padding: 0.55em 0.25em;
+  box-sizing: border-box;
   color: var(--color-accent);
   font-weight: 600;
   text-decoration: none;
-  padding: 0.3em 1em;
-  border-radius: 6px;
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+  background: transparent;
+  font-family: var(--font-ui);
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s, opacity 0.15s;
 }
-nav a:hover,
-nav a.active {
-  background: var(--color-card-solid);
-  color: var(--color-fg);
+nav .nav-main__link:hover {
+  color: var(--color-accent-hover);
+}
+nav .nav-main__link:active {
+  background: transparent;
+  color: var(--color-accent-hover);
+}
+/* Mouse click focus: no extra “pill”; keyboard users still get a ring */
+nav .nav-main__link:focus {
+  outline: none;
+}
+nav .nav-main__link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Stronger than Vite index.css `a` / `a:hover` if load order ever flips */
+.app-shell > nav a.nav-main__link,
+.app-shell > nav a.nav-main__link:link,
+.app-shell > nav a.nav-main__link:visited {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.app-shell > nav a.nav-main__link:hover {
+  color: var(--color-accent-hover);
 }
 
 .card,
@@ -124,9 +200,10 @@ nav a.active {
   box-shadow: 0 2px 12px rgba(30, 45, 30, 0.12);
   margin: 1em auto;
   padding: 1.5em;
-  max-width: 600px;
+  max-width: 640px;
   text-align: left;
   display: block;
+  box-sizing: border-box;
 }
 
 .card,
@@ -138,6 +215,107 @@ nav a.active {
 .profile-card {
   width: 100%;
   margin-bottom: 1.5em;
+}
+
+.auth-page {
+  width: 100%;
+  padding: 0.5rem 0 2rem;
+}
+
+.auth-card {
+  max-width: 540px;
+  padding: 2rem;
+}
+
+.auth-eyebrow {
+  margin: 0 0 0.75rem;
+  color: var(--color-accent);
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.auth-copy {
+  margin: 0 auto 1.75rem;
+  max-width: 28rem;
+  color: var(--color-fg-muted);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.auth-field input {
+  margin-bottom: 0.5rem;
+}
+
+.auth-error {
+  border: 1px solid rgba(139, 74, 74, 0.35);
+  background: rgba(139, 74, 74, 0.1);
+  color: var(--color-danger);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.98rem;
+}
+
+.auth-success {
+  border: 1px solid rgba(82, 121, 111, 0.4);
+  background: rgba(82, 121, 111, 0.12);
+  color: var(--color-accent-hover);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.98rem;
+}
+
+.auth-hint {
+  margin: -0.1rem 0 0.5rem;
+  color: var(--color-fg-muted);
+  font-size: 0.92rem;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.auth-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.auth-footer {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  color: var(--color-fg-muted);
+}
+
+.auth-link,
+.auth-link:link,
+.auth-link:visited {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  color: var(--color-accent-hover);
 }
 
 button,
@@ -240,17 +418,12 @@ input[type='radio']:checked::after {
 
 .search-form {
   width: 100%;
-  max-width: 600px;
+  max-width: 100%;
   margin: 0 auto 1em auto;
   display: flex;
   flex-direction: column;
   gap: 1em;
 }
-/* Flex layout keeps the UA h2 top margin; remove so gap under nav matches Diary/Search */
-.search-form > h2:first-child {
-  margin-top: 0;
-}
-
 .search-form--stacked form {
   display: flex;
   flex-direction: column;
@@ -273,6 +446,25 @@ input[type='radio']:checked::after {
   margin-bottom: 12px;
   align-items: center;
   justify-content: center;
+}
+.diary-search-launch-wrap {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  min-height: 4.5rem;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.diary-search-popout__header {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+.diary-search-popout__back {
+  width: auto;
+  min-width: 5.5rem;
 }
 .diary-toolbar-btn {
   box-sizing: border-box;
@@ -310,16 +502,6 @@ input[type='radio']:checked::after {
   background: var(--color-card-solid);
   color: var(--color-fg);
 }
-.diary-delete-btn {
-  font-family: var(--font-ui);
-  margin-top: 10px;
-  align-self: flex-start;
-  width: auto;
-  min-width: 6rem;
-  min-height: 40px;
-  padding: 0.5em 1em;
-}
-
 .diary-notes-block {
   margin-top: 8px;
 }
@@ -367,11 +549,11 @@ input[type='radio']:checked::after {
   position: relative;
   padding-right: 46px;
 }
-.diary-entry-add {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
+.lists-card {
+  position: relative;
+  padding-right: 46px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .lists-card-header {
@@ -387,6 +569,21 @@ input[type='radio']:checked::after {
   position: relative;
   flex-shrink: 0;
 }
+
+/* Diary: pin ⋯ to top-right (override .lists-card-menu position:relative, which was winning in cascade) */
+.lists-card-menu.diary-entry-menu {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+.lists-card-menu.lists-card-menu--corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+
 .lists-card-menu-btn {
   width: 40px;
   height: 40px;
@@ -779,8 +976,20 @@ input[type='radio']:checked::after {
     flex-direction: column;
     gap: 1em;
     min-width: unset;
-    max-width: 98vw;
+    max-width: 100%;
+    width: 100%;
     padding: 0.7em 0.5em;
+    box-sizing: border-box;
+  }
+  .nav-main {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .app-logout {
+    top: 0.35rem;
+    right: 16px;
+    padding: 0.38rem 0.72rem;
+    font-size: 0.88rem;
   }
   .card,
   .profile-card,
@@ -804,9 +1013,11 @@ input[type='radio']:checked::after {
     font-size: 0.98em;
   }
   .search-form {
-    max-width: 98vw;
-    padding: 0 2vw;
+    max-width: 100%;
+    width: 100%;
+    padding: 0;
     gap: 0.7em;
+    box-sizing: border-box;
   }
   .search-result {
     flex-direction: column;
@@ -828,11 +1039,6 @@ input[type='radio']:checked::after {
     padding: 1em 0;
     margin: 0.5em 0;
     border-radius: 14px;
-  }
-  .diary-delete-btn {
-    width: auto;
-    min-width: 6rem;
-    padding: 0.5em 1em;
   }
   .diary-notes-toggle {
     width: auto;
@@ -858,14 +1064,6 @@ input[type='radio']:checked::after {
     padding: 0;
     margin: 0;
     align-self: center;
-  }
-  .diary-entry-add {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    max-width: 36px;
-    min-height: 36px;
-    max-height: 36px;
   }
   .lists-card-menu-btn {
     width: 40px;

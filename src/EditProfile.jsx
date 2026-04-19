@@ -4,7 +4,7 @@ import API_BASE_URL from './config';
 
 const fetchSpotifySuggestions = async (type, query) => {
   if (!query) return [];
-  const resp = await fetch(`${API_BASE_URL}/api/spotify/search?query=${encodeURIComponent(query)}&type=${type}`);
+  const resp = await fetch(`${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`);
   const data = await resp.json();
   if (type === 'artist' && data.artists && data.artists.items) {
     return data.artists.items;

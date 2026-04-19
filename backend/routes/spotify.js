@@ -23,22 +23,6 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// GET /api/spotify/search?query=...&type=...
-router.get('/search', async (req, res) => {
-  const { query, type = 'album' } = req.query;
-  if (!query) return res.status(400).json({ message: 'Missing query' });
-  try {
-    const token = await getSpotifyToken();
-    const resp = await axios.get('https://api.spotify.com/v1/search', {
-      headers: { Authorization: 'Bearer ' + token },
-      params: { q: query, type, limit: 10 }
-    });
-    res.json(resp.data);
-  } catch (err) {
-    res.status(500).json({ message: 'Spotify search failed', error: err.message });
-  }
-});
-
 // GET /api/spotify/album/:id
 router.get('/album/:id', async (req, res) => {
   const { id } = req.params;

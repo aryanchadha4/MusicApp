@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "migrate:users-auth": "node migrate_user_auth_schema.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

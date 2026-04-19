@@ -1,9 +1,31 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const axios = require('axios');
 const DiaryEntry = require('../models/DiaryEntry');
 const User = require('../models/User');
 
 const router = express.Router();
+let spotifyToken = null;
+let tokenExpires = 0;
+
+async function getSpotifyToken() {
+  if (spotifyToken && Date.now() < tokenExpires) return spotifyToken;
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  const resp = await axios.post(
+    'https://accounts.spotify.com/api/token',
+    'grant_type=client_credentials',
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+      },
+    }
+  );
+  spotifyToken = resp.data.access_token;
+  tokenExpires = Date.now() + (resp.data.expires_in - 60) * 1000;
+  return spotifyToken;
+}
 
 // POST /api/diary/entries
 router.post('/entries', async (req, res) => {
@@ -85,6 +107,25 @@ router.get('/entries', async (req, res) => {
     res.json(entries);
   } catch (err) {
     res.status(500).json({ message: 'Failed to list diary entries', error: err.message });
+  }
+});
+
+// GET /api/diary/search?query=...&type=album|track
+router.get('/search', async (req, res) => {
+  const { query, type = 'album' } = req.query;
+  if (!query) return res.status(400).json({ message: 'Missing query' });
+  if (!['album', 'track'].includes(type)) {
+    return res.status(400).json({ message: 'type must be album or track' });
+  }
+  try {
+    const token = await getSpotifyToken();
+    const resp = await axios.get('https://api.spotify.com/v1/search', {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { q: query, type, limit: 10 },
+    });
+    res.json(resp.data);
+  } catch (err) {
+    res.status(500).json({ message: 'Spotify search failed', error: err.message });
   }
 });
 

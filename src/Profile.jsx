@@ -17,7 +17,7 @@ const formatDateTime = (dateStr) => {
 const fetchSpotifyImage = async (type, name, artist) => {
   let query = name;
   if (artist) query += ' ' + artist;
-  const resp = await fetch(`${API_BASE_URL}/api/spotify/search?query=${encodeURIComponent(query)}&type=${type}`);
+  const resp = await fetch(`${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`);
   const data = await resp.json();
   if (type === 'artist' && data.artists && data.artists.items && data.artists.items[0]) {
     return data.artists.items[0].images[0]?.url;

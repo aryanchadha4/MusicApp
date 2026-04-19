@@ -1,6 +1,38 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import API_BASE_URL from './config';
-import { ReadOnlyStarRow } from './components/HalfStarRating';
+import HalfStarRating, { ReadOnlyStarRow } from './components/HalfStarRating';
+
+function buildDiaryBodyFromModal(modalKind, album, track, rating, notes) {
+  if (modalKind === 'album' && album) {
+    return {
+      kind: 'album',
+      spotifyId: album.id,
+      title: album.name,
+      image: album.images?.[0]?.url || '',
+      primaryArtistName: album.artists?.[0]?.name || '',
+      primaryArtistId: album.artists?.[0]?.id || '',
+      albumName: '',
+      albumId: '',
+      rating,
+      notes,
+    };
+  }
+  if (modalKind === 'track' && track) {
+    return {
+      kind: 'track',
+      spotifyId: track.id,
+      title: track.name,
+      image: track.album?.images?.[0]?.url || '',
+      primaryArtistName: track.artists?.[0]?.name || '',
+      primaryArtistId: track.artists?.[0]?.id || '',
+      albumName: track.album?.name || '',
+      albumId: track.album?.id || '',
+      rating,
+      notes,
+    };
+  }
+  return null;
+}
 
 function CollapsibleDiaryNotes({ text }) {
   const [expanded, setExpanded] = useState(false);
@@ -46,7 +78,7 @@ function CollapsibleDiaryNotes({ text }) {
   );
 }
 
-export default function Diary({ user }) {
+export default function Diary({ user, onDiaryEntrySave }) {
   const [entries, setEntries] = useState([]);
   const [kindFilter, setKindFilter] = useState('all');
   const [sortKey, setSortKey] = useState('date');
@@ -60,6 +92,22 @@ export default function Diary({ user }) {
   const [selectedListId, setSelectedListId] = useState('');
   const [listModalError, setListModalError] = useState('');
   const [listModalSaving, setListModalSaving] = useState(false);
+  const [openEntryMenuId, setOpenEntryMenuId] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState('album');
+  const [searchResults, setSearchResults] = useState({});
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveModalKind, setSaveModalKind] = useState(null);
+  const [saveModalAlbum, setSaveModalAlbum] = useState(null);
+  const [saveModalTrack, setSaveModalTrack] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [saveModalRating, setSaveModalRating] = useState(0);
+  const [saveModalNotes, setSaveModalNotes] = useState('');
+  const [saveModalMessage, setSaveModalMessage] = useState('');
+  const [saveModalSaving, setSaveModalSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -91,6 +139,22 @@ export default function Diary({ user }) {
       cancelled = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!openEntryMenuId) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpenEntryMenuId(null);
+    };
+    const onDown = (e) => {
+      if (!e.target.closest?.('.diary-entry-menu')) setOpenEntryMenuId(null);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [openEntryMenuId]);
 
   const handleDelete = async (id) => {
     if (!user?.id) return;
@@ -158,9 +222,155 @@ export default function Diary({ user }) {
     setListModalSaving(false);
   };
 
+  const runSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setSearchLoading(true);
+    setSearchError('');
+    const query = searchQuery.trim();
+
+    const fetchSearchJson = async (url) => {
+      const r = await fetch(url);
+      const raw = await r.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = null;
+      }
+      return { r, data, raw };
+    };
+
+    try {
+      let result = await fetchSearchJson(
+        `${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${searchType}`
+      );
+
+      // Backward compatibility when backend is still serving old /api/spotify/search.
+      if (
+        !result.r.ok &&
+        result.r.status === 404 &&
+        typeof result.raw === 'string' &&
+        result.raw.includes('Cannot GET /api/diary/search')
+      ) {
+        result = await fetchSearchJson(
+          `${API_BASE_URL}/api/spotify/search?query=${encodeURIComponent(query)}&type=${searchType}`
+        );
+      }
+
+      if (!result.r.ok) {
+        throw new Error(result.data?.message || 'Search failed');
+      }
+      if (!result.data || typeof result.data !== 'object') {
+        throw new Error('Search response was not valid JSON');
+      }
+      setSearchResults(result.data);
+    } catch (err) {
+      setSearchResults({});
+      setSearchError(err.message || 'Search failed');
+    }
+    setSearchLoading(false);
+  };
+
+  const openSaveModalAlbum = (album) => {
+    setEditingEntry(null);
+    setSaveModalKind('album');
+    setSaveModalAlbum(album);
+    setSaveModalTrack(null);
+    setSaveModalRating(0);
+    setSaveModalNotes('');
+    setSaveModalMessage('');
+    setSaveModalOpen(true);
+  };
+
+  const openSaveModalTrack = (track) => {
+    setEditingEntry(null);
+    setSaveModalKind('track');
+    setSaveModalTrack(track);
+    setSaveModalAlbum(null);
+    setSaveModalRating(0);
+    setSaveModalNotes('');
+    setSaveModalMessage('');
+    setSaveModalOpen(true);
+  };
+
+  const closeSaveModal = () => {
+    setSaveModalOpen(false);
+    setEditingEntry(null);
+    setSaveModalKind(null);
+    setSaveModalAlbum(null);
+    setSaveModalTrack(null);
+    setSaveModalRating(0);
+    setSaveModalNotes('');
+    setSaveModalMessage('');
+  };
+
+  const openEditModal = (entry) => {
+    setEditingEntry(entry);
+    setSaveModalKind(entry.kind);
+    setSaveModalAlbum(null);
+    setSaveModalTrack(null);
+    setSaveModalRating(Number(entry.rating) || 0);
+    setSaveModalNotes(entry.notes || '');
+    setSaveModalMessage('');
+    setSaveModalOpen(true);
+  };
+
+  const submitSaveModal = async () => {
+    if (!user?.id) {
+      setSaveModalMessage('You need to be signed in to save.');
+      return;
+    }
+    if (saveModalRating <= 0) {
+      setSaveModalMessage('Choose a rating first.');
+      return;
+    }
+    setSaveModalSaving(true);
+    setSaveModalMessage('');
+    try {
+      if (editingEntry?._id) {
+        const r = await fetch(`${API_BASE_URL}/api/diary/entries/${editingEntry._id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            rating: saveModalRating,
+            notes: saveModalNotes,
+          }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.message || 'Save failed');
+      } else {
+        if (!onDiaryEntrySave) {
+          throw new Error('You need to be signed in to save.');
+        }
+        const body = buildDiaryBodyFromModal(
+          saveModalKind,
+          saveModalAlbum,
+          saveModalTrack,
+          saveModalRating,
+          saveModalNotes
+        );
+        if (!body) throw new Error('Save failed');
+        await onDiaryEntrySave(body);
+      }
+      await load();
+      setSaveModalMessage('Saved to your diary.');
+      setTimeout(() => {
+        setSaveModalSaving(false);
+        closeSaveModal();
+      }, 700);
+    } catch (err) {
+      setSaveModalMessage(err.message || 'Save failed');
+      setSaveModalSaving(false);
+    }
+  };
+
+  const albumItems = searchResults?.albums?.items;
+  const trackItems = searchResults?.tracks?.items;
+
   return (
-    <div className="search-form" style={{ maxWidth: 640 }}>
-      <h2>Diary</h2>
+    <div className="search-form">
       <div className="diary-toolbar">
         {['all', 'album', 'track'].map((k) => (
           <button key={k} type="button" className={kindBtnClass(k)} onClick={() => setKindFilter(k)}>
@@ -193,26 +403,197 @@ export default function Diary({ user }) {
         </button>
       </div>
 
+      <div className="diary-search-launch-wrap">
+        <button
+          type="button"
+          className="lists-new-btn"
+          aria-label="Search to add diary entry"
+          onClick={() => setSearchOpen((v) => !v)}
+        >
+          +
+        </button>
+      </div>
+
+      {searchOpen && (
+        <div
+          className="search-add-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="diary-search-modal-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'var(--color-modal-overlay, rgba(47, 62, 70, 0.55))',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => {
+            setSearchOpen(false);
+            setSearchResults({});
+            setSearchError('');
+          }}
+        >
+          <div
+            className="search-add-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 520,
+              width: '100%',
+              maxHeight: '88vh',
+              overflow: 'auto',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div className="diary-search-popout__header">
+              <button
+                type="button"
+                className="diary-toolbar-btn diary-toolbar-btn--muted diary-search-popout__back"
+                onClick={() => {
+                  setSearchOpen(false);
+                  setSearchResults({});
+                  setSearchError('');
+                }}
+              >
+                Back
+              </button>
+            </div>
+            <h3 id="diary-search-modal-title" style={{ marginTop: 0, textAlign: 'center' }}>
+              Search Music
+            </h3>
+            <div className="search-form--stacked">
+              <form onSubmit={runSearch}>
+                <select
+                  className="search-type-select"
+                  value={searchType}
+                  onChange={(e) => {
+                    setSearchType(e.target.value);
+                    setSearchResults({});
+                  }}
+                  aria-label="Search type"
+                >
+                  <option value="album">Albums</option>
+                  <option value="track">Songs</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder={searchType === 'album' ? 'Search for an album…' : 'Search for a song…'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <button type="submit" disabled={searchLoading}>
+                  {searchLoading ? 'Searching...' : 'Search'}
+                </button>
+              </form>
+            </div>
+            {searchError && <p style={{ color: 'var(--color-danger)', marginBottom: 0 }}>{searchError}</p>}
+            <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
+              {searchType === 'album' &&
+                Array.isArray(albumItems) &&
+                albumItems.map((album) => (
+                  <li key={album.id} className="search-result search-result-row">
+                    {album.images?.[0] && (
+                      <img src={album.images[0].url} alt="" style={{ width: 56, height: 56, borderRadius: 8 }} />
+                    )}
+                    <div className="search-result-row__text">
+                      <div style={{ fontWeight: 700 }}>{album.name}</div>
+                      <div style={{ color: 'var(--color-fg-muted)' }}>{album.artists?.[0]?.name}</div>
+                    </div>
+                    <button type="button" className="search-result-add" onClick={() => openSaveModalAlbum(album)}>
+                      +
+                    </button>
+                  </li>
+                ))}
+              {searchType === 'track' &&
+                Array.isArray(trackItems) &&
+                trackItems.map((track) => (
+                  <li key={track.id} className="search-result search-result-row">
+                    {track.album?.images?.[0] && (
+                      <img src={track.album.images[0].url} alt="" style={{ width: 56, height: 56, borderRadius: 8 }} />
+                    )}
+                    <div className="search-result-row__text">
+                      <div style={{ fontWeight: 700 }}>{track.name}</div>
+                      <div style={{ color: 'var(--color-fg-muted)' }}>
+                        {[track.artists?.map((a) => a.name).join(', '), track.album?.name].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <button type="button" className="search-result-add" onClick={() => openSaveModalTrack(track)}>
+                      +
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {error && <p style={{ color: 'var(--color-danger)', textAlign: 'center' }}>{error}</p>}
       {loading && <p style={{ textAlign: 'center', color: 'var(--color-fg-muted)' }}>Loading…</p>}
 
       {!loading && entries.length === 0 && (
         <p style={{ textAlign: 'center', color: 'var(--color-fg-muted)' }}>
-          Nothing logged yet. Use the <strong>Search</strong> tab to add music.
+          Nothing logged yet. Use the + button above to search and add music.
         </p>
       )}
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, width: '100%' }}>
         {entries.map((item) => (
           <li key={item._id} className="search-result diary-entry-card" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-            <button
-              type="button"
-              className="search-result-add diary-entry-add"
-              aria-label="Add to list"
-              onClick={() => openListModal(item)}
-            >
-              +
-            </button>
+            <div className="lists-card-menu diary-entry-menu">
+              <button
+                type="button"
+                className="lists-card-menu-btn"
+                aria-haspopup="menu"
+                aria-expanded={openEntryMenuId === item._id}
+                aria-label="Entry options"
+                onClick={() => setOpenEntryMenuId((id) => (id === item._id ? null : item._id))}
+              >
+                ⋯
+              </button>
+              {openEntryMenuId === item._id && (
+                <div className="lists-card-menu-dropdown" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="lists-card-menu-item"
+                    onClick={() => {
+                      setOpenEntryMenuId(null);
+                      openEditModal(item);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="lists-card-menu-item"
+                    onClick={() => {
+                      setOpenEntryMenuId(null);
+                      openListModal(item);
+                    }}
+                  >
+                    Add to list
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="lists-card-menu-item lists-card-menu-item--danger"
+                    onClick={() => {
+                      setOpenEntryMenuId(null);
+                      handleDelete(item._id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <img
                 src={item.image || 'https://via.placeholder.com/56'}
@@ -237,9 +618,6 @@ export default function Diary({ user }) {
                 </div>
               </div>
             </div>
-            <button type="button" className="diary-delete-btn" onClick={() => handleDelete(item._id)}>
-              Delete
-            </button>
           </li>
         ))}
       </ul>
@@ -319,6 +697,81 @@ export default function Diary({ user }) {
                 onClick={closeListModal}
                 disabled={listModalSaving}
               >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveModalOpen && (
+        <div
+          className="search-add-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="diary-save-modal-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'var(--color-modal-overlay, rgba(47, 62, 70, 0.55))',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={closeSaveModal}
+        >
+          <div
+            className="search-add-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 420,
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
+          >
+            <h3 id="diary-save-modal-title" style={{ marginTop: 0, textAlign: 'center' }}>
+              {editingEntry ? 'Edit diary entry' : 'Add to Diary'}
+            </h3>
+            <p style={{ textAlign: 'center', marginTop: 0, color: 'var(--color-fg-muted)' }}>
+              <strong>
+                {editingEntry
+                  ? editingEntry.title
+                  : saveModalKind === 'album'
+                    ? saveModalAlbum?.name
+                    : saveModalTrack?.name}
+              </strong>
+              {editingEntry?.primaryArtistName && (
+                <>
+                  <br />
+                  {editingEntry.primaryArtistName}
+                </>
+              )}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <HalfStarRating value={saveModalRating} onChange={setSaveModalRating} size={34} />
+            </div>
+            <textarea
+              className="search-add-modal__notes"
+              placeholder="Add a note (optional)"
+              value={saveModalNotes}
+              onChange={(e) => setSaveModalNotes(e.target.value)}
+            />
+            {saveModalMessage && (
+              <div style={{ marginTop: 10, textAlign: 'center', color: saveModalMessage.includes('Saved') ? 'var(--color-accent)' : 'var(--color-danger)' }}>
+                {saveModalMessage}
+              </div>
+            )}
+            <div className="search-add-modal__actions" style={{ marginTop: 12 }}>
+              <button type="button" onClick={submitSaveModal} disabled={saveModalSaving || saveModalRating <= 0}>
+                {editingEntry ? 'Save changes' : 'Save to diary'}
+              </button>
+              <button type="button" onClick={closeSaveModal} disabled={saveModalSaving} style={{ background: 'var(--color-card-solid)', color: 'var(--color-fg)' }}>
                 Cancel
               </button>
             </div>

@@ -1,13 +1,34 @@
 import API_BASE_URL from '../utils/config';
 
+export const AUTH_TOKEN_STORAGE_KEY = 'music_diary_token';
+
+const getAuthHeaders = (includeJson = true) => {
+  const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  const headers = {};
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 // Authentication APIs
 export const authAPI = {
   // Login
-  login: async (identifier, password) => {
+  login: async (email, password) => {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({ email, password }),
+    });
+    return response.json();
+  },
+
+  me: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: getAuthHeaders(false),
     });
     return response.json();
   },
@@ -33,7 +54,7 @@ export const authAPI = {
   editProfile: async (profileData) => {
     const response = await fetch(`${API_BASE_URL}/api/auth/edit-profile`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(profileData),
     });
     return response.json();
@@ -43,7 +64,7 @@ export const authAPI = {
   changeCredentials: async (credentialsData) => {
     const response = await fetch(`${API_BASE_URL}/api/auth/change-credentials`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(credentialsData),
     });
     return response.json();
@@ -168,7 +189,7 @@ export const diaryAPI = {
 export const spotifyAPI = {
   // Search
   search: async (query, type) => {
-    const response = await fetch(`${API_BASE_URL}/api/spotify/search?query=${encodeURIComponent(query)}&type=${type}`);
+    const response = await fetch(`${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`);
     return response.json();
   },
 

@@ -1,50 +1,111 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import API_BASE_URL from './config';
 
 const Login = ({ onLogin }) => {
-  const [form, setForm] = useState({ identifier: '', password: '' });
-  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleChange = e => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    if (error) {
+      setError('');
+    }
+    setForm((current) => ({ ...current, [name]: value }));
   };
 
-  const handleSubmit = async e => {
-    e.preventDefault();
-    setMessage('');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const email = form.email.trim();
+    const password = form.password;
+
     setError('');
+
+    if (!email || !password) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMessage('Login successful!');
-        onLogin && onLogin(data.user);
+        onLogin && onLogin(data);
       } else {
         setError(data.message || 'Login failed');
       }
     } catch (err) {
-      setError('Login failed');
+      setError('Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1em' }}>
-        <input name="identifier" type="text" placeholder="Email or Username" value={form.identifier} onChange={handleChange} required style={{ width: '100%', maxWidth: 500 }} />
-        <input name="password" type="password" placeholder="Password" value={form.password} onChange={handleChange} required style={{ width: '100%', maxWidth: 500 }} />
-        {error && <div style={{ color: '#ff7f7f', marginBottom: '1em' }}>{error}</div>}
-        <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
-      </form>
-      {message && <p>{message}</p>}
+    <div className="auth-page">
+      <section className="card auth-card">
+        <p className="auth-eyebrow">Welcome back</p>
+        <h2>Log in to your diary</h2>
+        <p className="auth-copy">
+          Pick up where you left off and keep tracking the albums and songs shaping your week.
+        </p>
+
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
+          <label className="auth-field" htmlFor="login-email">
+            <span>Email</span>
+            <input
+              id="login-email"
+              name="email"
+              type="email"
+              placeholder="you@example.com"
+              value={form.email}
+              onChange={handleChange}
+              autoComplete="email"
+              required
+            />
+          </label>
+
+          <label className="auth-field" htmlFor="login-password">
+            <span>Password</span>
+            <input
+              id="login-password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              value={form.password}
+              onChange={handleChange}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
+          {error ? (
+            <div className="auth-error" role="alert">
+              {error}
+            </div>
+          ) : null}
+
+          <button className="auth-submit" type="submit" disabled={loading}>
+            {loading ? 'Logging in...' : 'Log in'}
+          </button>
+        </form>
+
+        <p className="auth-footer">
+          New here?{' '}
+          <Link className="auth-link" to="/signup">
+            Create account
+          </Link>
+        </p>
+      </section>
     </div>
   );
 };
