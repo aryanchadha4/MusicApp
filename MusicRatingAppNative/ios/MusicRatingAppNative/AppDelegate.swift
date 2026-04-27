@@ -35,14 +35,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
   override func sourceURL(for bridge: RCTBridge) -> URL? {
-    self.bundleURL()
+    return self.bundleURL()
   }
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+    // Fallback keeps simulator booting even if bundle provider returns nil.
+    return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+      ?? URL(string: "http://localhost:8081/index.bundle?platform=ios")
 #else
-    Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
   }
 }

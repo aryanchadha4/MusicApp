@@ -1,193 +1,58 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  FlatList,
-  Image,
-} from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { spotifyAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
 
 const SignupScreen = ({ navigation }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    username: '',
+  const [form, setForm] = useState({
     email: '',
     password: '',
+    confirmPassword: '',
   });
   const [loading, setLoading] = useState(false);
-  const [artistQuery, setArtistQuery] = useState('');
-  const [songQuery, setSongQuery] = useState('');
-  const [artistResults, setArtistResults] = useState([]);
-  const [songResults, setSongResults] = useState([]);
-  const [selectedArtists, setSelectedArtists] = useState([]);
-  const [selectedSongs, setSelectedSongs] = useState([]);
-  const [showArtistResults, setShowArtistResults] = useState(false);
-  const [showSongResults, setShowSongResults] = useState(false);
-  
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
   const { signup } = useAuth();
 
-  // Search artists
-  useEffect(() => {
-    const searchArtists = async () => {
-      if (artistQuery.trim().length > 2) {
-        try {
-          const response = await spotifyAPI.search(artistQuery, 'artist');
-          setArtistResults(response.artists?.items || []);
-          setShowArtistResults(true);
-        } catch (error) {
-          console.error('Artist search error:', error);
-        }
-      } else {
-        setArtistResults([]);
-        setShowArtistResults(false);
-      }
-    };
-
-    const timeoutId = setTimeout(searchArtists, 500);
-    return () => clearTimeout(timeoutId);
-  }, [artistQuery]);
-
-  // Search songs
-  useEffect(() => {
-    const searchSongs = async () => {
-      if (songQuery.trim().length > 2) {
-        try {
-          const response = await spotifyAPI.search(songQuery, 'track');
-          setSongResults(response.tracks?.items || []);
-          setShowSongResults(true);
-        } catch (error) {
-          console.error('Song search error:', error);
-        }
-      } else {
-        setSongResults([]);
-        setShowSongResults(false);
-      }
-    };
-
-    const timeoutId = setTimeout(searchSongs, 500);
-    return () => clearTimeout(timeoutId);
-  }, [songQuery]);
-
-  const addArtist = (artist) => {
-    if (selectedArtists.length >= 3) {
-      Alert.alert('Limit Reached', 'You can only select up to 3 favorite artists.');
-      return;
-    }
-    if (selectedArtists.find(a => a.id === artist.id)) {
-      Alert.alert('Already Added', 'This artist is already in your favorites.');
-      return;
-    }
-    setSelectedArtists([...selectedArtists, { name: artist.name, id: artist.id }]);
-    setArtistQuery('');
-    setShowArtistResults(false);
-  };
-
-  const addSong = (song) => {
-    if (selectedSongs.length >= 3) {
-      Alert.alert('Limit Reached', 'You can only select up to 3 favorite songs.');
-      return;
-    }
-    if (selectedSongs.find(s => s.id === song.id)) {
-      Alert.alert('Already Added', 'This song is already in your favorites.');
-      return;
-    }
-    setSelectedSongs([...selectedSongs, { 
-      title: song.name, 
-      artist: song.artists[0].name, 
-      artistId: song.artists[0].id 
-    }]);
-    setSongQuery('');
-    setShowSongResults(false);
-  };
-
-  const removeArtist = (artistId) => {
-    setSelectedArtists(selectedArtists.filter(a => a.id !== artistId));
-  };
-
-  const removeSong = (songId) => {
-    setSelectedSongs(selectedSongs.filter(s => s.id !== songId));
-  };
-
   const handleSignup = async () => {
-    if (!formData.name.trim() || !formData.username.trim() || 
-        !formData.email.trim() || !formData.password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+    const email = form.email.trim();
+    const password = form.password;
+    const confirmPassword = form.confirmPassword;
+
+    setError('');
+    setSuccess('');
+
+    if (!email || !password || !confirmPassword) {
+      setError('Please fill in all fields.');
       return;
     }
 
-    if (selectedArtists.length === 0) {
-      Alert.alert('Error', 'Please select at least one favorite artist');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
       return;
     }
 
-    if (selectedSongs.length === 0) {
-      Alert.alert('Error', 'Please select at least one favorite song');
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
       return;
     }
 
     setLoading(true);
     try {
-      const userData = {
-        ...formData,
-        favoriteArtists: selectedArtists,
-        favoriteSongs: selectedSongs,
-      };
-
-      const result = await signup(userData);
+      const result = await signup({ email, password });
       if (result.success) {
-        Alert.alert('Success', 'Account created successfully! Please login.', [
-          { text: 'OK', onPress: () => navigation.navigate('Login') }
-        ]);
+        setSuccess('Account created. Redirecting to login...');
+        setTimeout(() => navigation.navigate('Login'), 900);
       } else {
-        Alert.alert('Signup Failed', result.error);
+        setError(result.error || 'Create account failed. Please try again.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Signup failed. Please try again.');
+    } catch {
+      setError('Create account failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
-  const renderArtistItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.resultItem}
-      onPress={() => addArtist(item)}
-    >
-      <Image
-        source={{ uri: item.images?.[0]?.url || 'https://via.placeholder.com/50' }}
-        style={styles.resultImage}
-      />
-      <View style={styles.resultText}>
-        <Text style={styles.resultTitle}>{item.name}</Text>
-        <Text style={styles.resultSubtitle}>Artist</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderSongItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.resultItem}
-      onPress={() => addSong(item)}
-    >
-      <Image
-        source={{ uri: item.album?.images?.[0]?.url || 'https://via.placeholder.com/50' }}
-        style={styles.resultImage}
-      />
-      <View style={styles.resultText}>
-        <Text style={styles.resultTitle}>{item.name}</Text>
-        <Text style={styles.resultSubtitle}>{item.artists?.[0]?.name}</Text>
-      </View>
-    </TouchableOpacity>
-  );
 
   return (
     <KeyboardAvoidingView
@@ -196,133 +61,75 @@ const SignupScreen = ({ navigation }) => {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.content}>
-          <Text style={styles.title}>Start your diary</Text>
-          
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              placeholderTextColor={colors.foregroundMuted}
-              value={formData.name}
-              onChangeText={(text) => setFormData({...formData, name: text})}
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              placeholderTextColor={colors.foregroundMuted}
-              value={formData.username}
-              onChangeText={(text) => setFormData({...formData, username: text})}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              placeholderTextColor={colors.foregroundMuted}
-              value={formData.email}
-              onChangeText={(text) => setFormData({...formData, email: text})}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor={colors.foregroundMuted}
-              value={formData.password}
-              onChangeText={(text) => setFormData({...formData, password: text})}
-              secureTextEntry
-              autoCapitalize="none"
-            />
+          <View style={styles.card}>
+            <Text style={styles.eyebrow}>Create account</Text>
+            <Text style={styles.title}>Start your diary</Text>
+            <Text style={styles.copy}>
+              Create a secure account with your email and password. You can fill in the rest of your profile later.
+            </Text>
 
-            {/* Favorite Artists Section */}
-            <Text style={styles.sectionTitle}>Favorite Artists (Required)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Search for artists..."
-              placeholderTextColor={colors.foregroundMuted}
-              value={artistQuery}
-              onChangeText={setArtistQuery}
-            />
-            
-            {showArtistResults && (
-              <View style={styles.resultsContainer}>
-                <FlatList
-                  data={artistResults}
-                  renderItem={renderArtistItem}
-                  keyExtractor={(item) => item.id}
-                  style={styles.resultsList}
-                />
-              </View>
-            )}
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor={colors.foregroundMuted}
+                value={form.email}
+                onChangeText={(text) => {
+                  if (error) setError('');
+                  setForm((current) => ({ ...current, email: text }));
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
 
-            {selectedArtists.length > 0 && (
-              <View style={styles.selectedContainer}>
-                <Text style={styles.selectedTitle}>Selected Artists:</Text>
-                {selectedArtists.map((artist) => (
-                  <View key={artist.id} style={styles.selectedItem}>
-                    <Text style={styles.selectedText}>{artist.name}</Text>
-                    <TouchableOpacity onPress={() => removeArtist(artist.id)}>
-                      <Text style={styles.removeButton}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={colors.foregroundMuted}
+                value={form.password}
+                onChangeText={(text) => {
+                  if (error) setError('');
+                  setForm((current) => ({ ...current, password: text }));
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+              />
 
-            {/* Favorite Songs Section */}
-            <Text style={styles.sectionTitle}>Favorite Songs (Required)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Search for songs..."
-              placeholderTextColor={colors.foregroundMuted}
-              value={songQuery}
-              onChangeText={setSongQuery}
-            />
-            
-            {showSongResults && (
-              <View style={styles.resultsContainer}>
-                <FlatList
-                  data={songResults}
-                  renderItem={renderSongItem}
-                  keyExtractor={(item) => item.id}
-                  style={styles.resultsList}
-                />
-              </View>
-            )}
+              <TextInput
+                style={styles.input}
+                placeholder="Confirm password"
+                placeholderTextColor={colors.foregroundMuted}
+                value={form.confirmPassword}
+                onChangeText={(text) => {
+                  if (error) setError('');
+                  setForm((current) => ({ ...current, confirmPassword: text }));
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+              />
 
-            {selectedSongs.length > 0 && (
-              <View style={styles.selectedContainer}>
-                <Text style={styles.selectedTitle}>Selected Songs:</Text>
-                {selectedSongs.map((song, index) => (
-                  <View key={index} style={styles.selectedItem}>
-                    <Text style={styles.selectedText}>{song.title} - {song.artist}</Text>
-                    <TouchableOpacity onPress={() => removeSong(song.id)}>
-                      <Text style={styles.removeButton}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-            
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSignup}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {loading ? 'Creating Account...' : 'Sign Up'}
-              </Text>
-            </TouchableOpacity>
-            
-            <View style={styles.loginContainer}>
-              <Text style={styles.loginText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.loginLink}>Login</Text>
+              <Text style={styles.hint}>Use at least 8 characters.</Text>
+
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              {success ? <Text style={styles.successText}>{success}</Text> : null}
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleSignup}
+                disabled={loading}
+              >
+                <Text style={styles.buttonText}>
+                  {loading ? 'Creating account...' : 'Create account'}
+                </Text>
               </TouchableOpacity>
+
+              <View style={styles.footerRow}>
+                <Text style={styles.footerText}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                  <Text style={styles.footerLink}>Log in</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -338,16 +145,51 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 24,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    alignItems: 'center',
+    width: '100%',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: colors.mist,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 20,
+    paddingVertical: 26,
+    paddingHorizontal: 20,
+    shadowColor: '#1f2d23',
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  eyebrow: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.accent,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: 'bold',
     color: colors.foreground,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  copy: {
+    fontSize: 15,
+    color: colors.foregroundMuted,
     marginBottom: 30,
     textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: 420,
   },
   form: {
     width: '100%',
@@ -362,79 +204,34 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     fontSize: 16,
   },
-  sectionTitle: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  resultsContainer: {
-    maxHeight: 200,
-    backgroundColor: colors.inputBg,
-    borderRadius: 8,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  resultsList: {
-    maxHeight: 200,
-  },
-  resultItem: {
-    flexDirection: 'row',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.cardBorder,
-    alignItems: 'center',
-  },
-  resultImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  resultText: {
-    flex: 1,
-  },
-  resultTitle: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  resultSubtitle: {
+  hint: {
     color: colors.foregroundMuted,
-    fontSize: 14,
-  },
-  selectedContainer: {
+    fontSize: 13,
     marginBottom: 15,
   },
-  selectedTitle: {
-    color: colors.accent,
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  selectedItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.inputBg,
-    padding: 10,
-    borderRadius: 6,
-    marginBottom: 5,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  selectedText: {
-    color: colors.foreground,
-    fontSize: 14,
-    flex: 1,
-  },
-  removeButton: {
+  errorText: {
     color: colors.danger,
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginLeft: 10,
+    fontSize: 14,
+    marginTop: -4,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 74, 74, 0.35)',
+    backgroundColor: 'rgba(139, 74, 74, 0.1)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  successText: {
+    color: colors.accentHover,
+    fontSize: 14,
+    marginTop: -4,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(82, 121, 111, 0.4)',
+    backgroundColor: 'rgba(82, 121, 111, 0.12)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   button: {
     backgroundColor: colors.accent,
@@ -451,19 +248,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  loginContainer: {
+  footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 20,
   },
-  loginText: {
+  footerText: {
     color: colors.foregroundMuted,
-    fontSize: 16,
+    fontSize: 14,
   },
-  loginLink: {
+  footerLink: {
     color: colors.accent,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

@@ -76,7 +76,7 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: response.message };
       }
     } catch (error) {
-      return { success: false, error: 'Signup failed' };
+      return { success: false, error: error?.message || 'Signup failed' };
     }
   };
 

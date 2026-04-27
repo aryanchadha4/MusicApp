@@ -33,27 +33,27 @@ target 'MusicRatingAppNative' do
       # :ccache_enabled => true
     )
 
+    # Legacy architecture does not require Fabric third-party registration.
+    # Returning an empty map prevents NSClassFromString(nil) dictionary crashes.
     provider_path = File.join(__dir__, 'build', 'generated', 'ios', 'RCTThirdPartyComponentsProvider.mm')
     if File.exist?(provider_path)
-      provider_source = File.read(provider_path)
-      provider_source.sub!(
-        "  dispatch_once(&nativeComponentsToken, ^{\n    thirdPartyComponents = @{",
-        "  dispatch_once(&nativeComponentsToken, ^{\n    NSMutableDictionary<NSString *, Class<RCTComponentViewProtocol>> *components = [NSMutableDictionary new];"
-      )
-      provider_source.gsub!(
-        /^\s+@"([^"]+)": NSClassFromString\(@"([^"]+)"\), \/\/ (.+)$/,
-        <<~'OBJC'.rstrip
-    Class<RCTComponentViewProtocol> $1Class = NSClassFromString(@"$2");
-    if ($1Class != nil) {
-      components[@"$1"] = $1Class; // $3
-    }
+      File.write(
+        provider_path,
+        <<~'OBJC'
+          #import <Foundation/Foundation.h>
+          #import "RCTThirdPartyComponentsProvider.h"
+          #import <React/RCTComponentViewProtocol.h>
+
+          @implementation RCTThirdPartyComponentsProvider
+
+          + (NSDictionary<NSString *, Class<RCTComponentViewProtocol>> *)thirdPartyFabricComponents
+          {
+            return @{};
+          }
+
+          @end
         OBJC
       )
-      provider_source.sub!(
-        "    };\n  });",
-        "    thirdPartyComponents = [components copy];\n  });"
-      )
-      File.write(provider_path, provider_source)
     end
   end
 end

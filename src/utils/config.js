@@ -1,7 +1,7 @@
-// Configuration for API endpoints
-// Change this to your computer's IP address when testing on physical device
-const API_BASE_URL = 'http://192.168.1.99:5001'; // For mobile access
-// const API_BASE_URL = 'http://localhost:5001'; // For iOS Simulator
+// Configuration for API endpoints.
+// Keep this React Native-safe (Hermes does not support `import.meta`).
+// For physical devices, set this to your machine LAN IP, e.g. http://192.168.x.x:5001.
+const API_BASE_URL = 'http://localhost:5001';
 
 /** When true, login/signup screens are skipped; app loads this user via profile API. */
 export const AUTH_DISABLED = false;
