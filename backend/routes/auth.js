@@ -3,6 +3,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const axios = require('axios');
+const { requireAuth } = require('../middleware/requireAuth');
+const { ensureUserAccountForLegacyUser } = require('../services/accountService');
 
 const router = express.Router();
 const LOGIN_TOKEN_TTL = '1d';
@@ -52,14 +54,8 @@ function buildAuthUser(user) {
   };
 }
 
-function getAuthToken(req) {
-  const header = req.get('authorization') || '';
-  const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return '';
-  return token.trim();
-}
-
 async function buildProfileResponse(user) {
+  const userAccount = await ensureUserAccountForLegacyUser(user);
   const followingUsersRaw = await User.find({ _id: { $in: user.following } }).select('name username email _id profilePic');
   const followingUsers = followingUsersRaw.map((u) => ({
     _id: u._id,
@@ -80,6 +76,7 @@ async function buildProfileResponse(user) {
 
   return {
     id: user._id.toString(),
+    accountId: userAccount?._id?.toString?.() || '',
     username: user.username || '',
     name: user.name,
     email: user.email,
@@ -93,26 +90,6 @@ async function buildProfileResponse(user) {
     followers,
     profilePic: user.profilePic || '',
   };
-}
-
-async function requireAuth(req, res, next) {
-  const token = getAuthToken(req);
-  if (!token) {
-    return res.status(401).json({ message: 'Authentication required' });
-  }
-
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(payload.userId);
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid session' });
-    }
-    req.auth = payload;
-    req.user = user;
-    next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Invalid session' });
-  }
 }
 
 function normalizeUsername(value) {
@@ -257,17 +234,15 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // Edit Profile
-router.patch('/edit-profile', async (req, res) => {
-  const { email, name, favoriteArtists, favoriteSongs, profilePic } = req.body;
+router.patch('/edit-profile', requireAuth, async (req, res) => {
+  const { name, favoriteArtists, favoriteSongs, profilePic } = req.body;
   try {
-    const updateFields = { name, favoriteArtists, favoriteSongs };
-    if (profilePic !== undefined) updateFields.profilePic = profilePic;
-    const user = await User.findOneAndUpdate(
-      { email },
-      updateFields,
-      { new: true }
-    );
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = req.user;
+    if (name !== undefined) user.name = name;
+    if (favoriteArtists !== undefined) user.favoriteArtists = Array.isArray(favoriteArtists) ? favoriteArtists : [];
+    if (favoriteSongs !== undefined) user.favoriteSongs = Array.isArray(favoriteSongs) ? favoriteSongs : [];
+    if (profilePic !== undefined) user.profilePic = profilePic;
+    await user.save();
     res.json({ message: 'Profile updated', user });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -299,18 +274,13 @@ router.get('/profile', async (req, res) => {
 });
 
 // Rate an album
-router.post('/rate-album', async (req, res) => {
-  const { userId, email, album } = req.body;
+router.post('/rate-album', requireAuth, async (req, res) => {
+  const { album } = req.body;
   try {
-    let user;
-    if (userId) {
-      user = await User.findById(userId);
-    } else if (email) {
-      user = await User.findOne({ email });
-    } else {
-      return res.status(400).json({ message: 'Missing userId or email' });
+    if (!album || typeof album !== 'object') {
+      return res.status(400).json({ message: 'Missing album payload' });
     }
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = req.user;
     // Ensure artistId is present
     if (!album.artistId && album.albumId) {
       // Fetch from Spotify
@@ -339,12 +309,11 @@ router.post('/rate-album', async (req, res) => {
 });
 
 // Delete a review
-router.post('/delete-review', async (req, res) => {
-  const { userId, albumId } = req.body;
-  if (!userId || !albumId) return res.status(400).json({ message: 'Missing userId or albumId' });
+router.post('/delete-review', requireAuth, async (req, res) => {
+  const { albumId } = req.body;
+  if (!albumId) return res.status(400).json({ message: 'Missing albumId' });
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = req.user;
     user.ratedAlbums = (user.ratedAlbums || []).filter(a => a.albumId !== albumId);
     await user.save();
     res.json({ message: 'Review deleted', ratedAlbums: user.ratedAlbums });
@@ -354,12 +323,11 @@ router.post('/delete-review', async (req, res) => {
 });
 
 // Edit a review
-router.post('/edit-review', async (req, res) => {
-  const { userId, albumId, review, rating } = req.body;
-  if (!userId || !albumId) return res.status(400).json({ message: 'Missing userId or albumId' });
+router.post('/edit-review', requireAuth, async (req, res) => {
+  const { albumId, review, rating } = req.body;
+  if (!albumId) return res.status(400).json({ message: 'Missing albumId' });
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = req.user;
     let updated = false;
     user.ratedAlbums = (user.ratedAlbums || []).map(a => {
       if (a.albumId === albumId) {
@@ -377,7 +345,7 @@ router.post('/edit-review', async (req, res) => {
 });
 
 // Search users
-router.get('/search-users', async (req, res) => {
+router.get('/search-users', requireAuth, async (req, res) => {
   const { query } = req.query;
   if (!query) {
     return res.json([]);
@@ -397,13 +365,17 @@ router.get('/search-users', async (req, res) => {
 });
 
 // Follow a user
-router.post('/follow', async (req, res) => {
-  const { userId, followId } = req.body;
-  if (!userId || !followId) return res.status(400).json({ message: 'Missing userId or followId' });
+router.post('/follow', requireAuth, async (req, res) => {
+  const { followId } = req.body;
+  if (!followId) return res.status(400).json({ message: 'Missing followId' });
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    if (!user.following.includes(followId)) {
+    const user = req.user;
+    if (user._id.toString() === String(followId)) {
+      return res.status(400).json({ message: 'You cannot follow yourself' });
+    }
+    const targetUser = await User.findById(followId);
+    if (!targetUser) return res.status(404).json({ message: 'User not found' });
+    if (!user.following.some((id) => id.toString() === String(followId))) {
       user.following.push(followId);
       await user.save();
     }
@@ -414,12 +386,11 @@ router.post('/follow', async (req, res) => {
 });
 
 // Unfollow a user
-router.post('/unfollow', async (req, res) => {
-  const { userId, unfollowId } = req.body;
-  if (!userId || !unfollowId) return res.status(400).json({ message: 'Missing userId or unfollowId' });
+router.post('/unfollow', requireAuth, async (req, res) => {
+  const { unfollowId } = req.body;
+  if (!unfollowId) return res.status(400).json({ message: 'Missing unfollowId' });
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = req.user;
     user.following = user.following.filter(id => id.toString() !== unfollowId);
     await user.save();
     res.json({ message: 'Unfollowed', following: user.following });
@@ -429,11 +400,9 @@ router.post('/unfollow', async (req, res) => {
 });
 
 // Get feed of ratings from followed users
-router.get('/friends-feed', async (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ message: 'Missing userId' });
+router.get('/friends-feed', requireAuth, async (req, res) => {
   try {
-    const user = await User.findById(userId).populate({
+    const user = await User.findById(req.user._id).populate({
       path: 'following',
       select: 'username name ratedAlbums',
     });
@@ -465,19 +434,20 @@ router.get('/friends-feed', async (req, res) => {
 });
 
 // Change Password / Email endpoint
-router.patch('/change-credentials', async (req, res) => {
-  const { email, currentPassword, newPassword, newEmail } = req.body;
-  if (!email || !currentPassword) return res.status(400).json({ message: 'Missing email or current password' });
+router.patch('/change-credentials', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword, newEmail } = req.body;
+  if (!currentPassword) return res.status(400).json({ message: 'Missing current password' });
   try {
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findById(req.user._id).select('+password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
     // Update email if provided and not taken
-    if (newEmail && newEmail !== user.email) {
-      const existing = await User.findOne({ email: newEmail });
+    const normalizedNewEmail = normalizeEmail(newEmail);
+    if (normalizedNewEmail && normalizedNewEmail !== user.email) {
+      const existing = await User.findOne({ email: normalizedNewEmail });
       if (existing) return res.status(400).json({ message: 'Email already in use' });
-      user.email = newEmail;
+      user.email = normalizedNewEmail;
     }
     // Update password if provided
     if (newPassword) {

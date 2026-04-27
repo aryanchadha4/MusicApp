@@ -1,54 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useSwipeable } from 'react-swipeable';
 import { Link } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { getShortReview } from './domain/models';
+import { useFeedData } from './features/social/useFeedData';
 
 const fallbackImg = 'https://via.placeholder.com/100x100?text=No+Image';
 
 const Feed = ({ user }) => {
-  const [popularAlbums, setPopularAlbums] = useState([]);
-  const [popularError, setPopularError] = useState('');
+  const { popularAlbums, popularError, friendFeed, friendFeedError, friendFeedLoading } = useFeedData(user?.id);
   const [carouselIdx, setCarouselIdx] = useState(0);
   const albumsPerView = 3;
-
-  const [friendFeed, setFriendFeed] = useState([]);
-  const [friendFeedError, setFriendFeedError] = useState('');
   const [friendFeedIdx, setFriendFeedIdx] = useState(0);
   const reviewsPerView = 3;
-  const [friendFeedLoading, setFriendFeedLoading] = useState(false);
-
-  useEffect(() => {
-    // Fetch friends feed
-    const fetchFriendFeed = async () => {
-      if (!user || !user.id) return;
-      setFriendFeedLoading(true);
-      try {
-        const resp = await fetch(`${API_BASE_URL}/api/auth/friends-feed?userId=${user.id}`);
-        if (!resp.ok) throw new Error('Failed to fetch friends feed');
-        const data = await resp.json();
-        setFriendFeed(data);
-        setFriendFeedError('');
-      } catch (err) {
-        setFriendFeed([]);
-        setFriendFeedError('Could not load friends feed.');
-      }
-      setFriendFeedLoading(false);
-    };
-    fetchFriendFeed();
-    const fetchPopular = async () => {
-      try {
-        const resp = await fetch(`${API_BASE_URL}/api/spotify/top-albums`);
-        if (!resp.ok) throw new Error('Failed to fetch popular albums');
-        const data = await resp.json();
-        setPopularAlbums(data);
-        setPopularError('');
-      } catch (err) {
-        setPopularAlbums([]);
-        setPopularError('Could not load popular albums. Please try again later.');
-      }
-    };
-    fetchPopular();
-  }, [user]);
 
   const handleFriendPrev = () => {
     setFriendFeedIdx(idx => Math.max(0, idx - 1));
@@ -102,8 +65,7 @@ const Feed = ({ user }) => {
                 <div className="spinner" style={{ margin: '40px auto', width: 32, height: 32, border: '4px solid #7fd7ff', borderTop: '4px solid #23263a', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
               </div>
             ) : visibleFriendReviews.length > 0 ? visibleFriendReviews.map((item, idx) => {
-              const reviewWords = (item.review || '').split(' ');
-              const shortReview = reviewWords.length > 3 ? reviewWords.slice(0, 3).join(' ') + '...' : item.review;
+              const shortReview = getShortReview(item.review);
               return (
                 <div key={item.reviewedAt + item.user + idx} style={{ background: '#23263a', borderRadius: 10, padding: 12, width: 120, minWidth: 120, maxWidth: 140, textAlign: 'center', boxShadow: '0 1px 8px #0002', flex: 1, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
                   <div style={{ fontWeight: 600, color: '#a084ee', fontSize: 15, marginBottom: 2 }}>

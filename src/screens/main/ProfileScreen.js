@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   FlatList,
   Alert,
   RefreshControl,
+  View,
 } from 'react-native';
+import AppScreen from '../../components/native/AppScreen';
+import MetricGrid from '../../components/native/MetricGrid';
+import NativeButton from '../../components/native/NativeButton';
+import SectionCard from '../../components/native/SectionCard';
 import { useAuth } from '../../context/AuthContext';
 import { authAPI } from '../../services/api';
 import { colors } from '../../theme/colors';
+import { getProfileDisplayName, sortReviewsByDate } from '../../domain/models/profile';
+import { radii, spacing } from '../../theme/tokens';
 
 const ProfileScreen = ({ navigation }) => {
   const { user, profileInfo, logout, updateProfileInfo, authDisabled } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   const p = profileInfo || {};
+  const recentReviews = sortReviewsByDate(p.ratedAlbums || []).slice(0, 3);
 
   const onRefresh = async () => {
     if (!user?.email) return;
@@ -48,54 +54,48 @@ const ProfileScreen = ({ navigation }) => {
   const joined = p.joined || p.createdAt;
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
+    <AppScreen
+      eyebrow="You"
+      title={getProfileDisplayName(p || user || {})}
+      subtitle="Profile, favorites, and account controls stay in one native section with the same tone as the web app."
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+      headerAccessory={<Text style={styles.headerPill}>Profile</Text>}
     >
-      {/* Profile Header */}
-      <View style={styles.profileHeader}>
-        <Image
-          source={{
-            uri: p.profilePic || 'https://via.placeholder.com/100',
-          }}
-          style={styles.profileImage}
-        />
-        <View style={styles.profileInfo}>
-          <Text style={styles.userName}>{p.name || user?.username || 'Listener'}</Text>
-          <Text style={styles.username}>@{p.username || user?.username || '—'}</Text>
-          {joined ? (
-            <Text style={styles.joinDate}>Joined {new Date(joined).toLocaleDateString()}</Text>
-          ) : null}
-        </View>
-      </View>
+      <MetricGrid
+        items={[
+          { label: 'Reviews', value: p.ratedAlbums?.length || 0 },
+          { label: 'Artists', value: p.favoriteArtists?.length || 0 },
+          { label: 'Songs', value: p.favoriteSongs?.length || 0 },
+          { label: 'Recent', value: recentReviews.length || 0 },
+        ]}
+      />
 
-      <View style={styles.diaryHint}>
+      <SectionCard eyebrow="Identity" title={p.username ? `@${p.username}` : 'Listener'} subtitle={joined ? `Joined ${new Date(joined).toLocaleDateString()}` : 'New listener'}>
+        <View style={styles.profileHeader}>
+          <Image
+            source={{
+              uri: p.profilePic || 'https://via.placeholder.com/100',
+            }}
+            style={styles.profileImage}
+          />
+          <View style={styles.profileInfo}>
+            <Text style={styles.userName}>{p.name || user?.username || 'Listener'}</Text>
+            <Text style={styles.username}>@{p.username || user?.username || '—'}</Text>
+          </View>
+        </View>
         <Text style={styles.diaryHintText}>
-          Your listens live on the Diary tab. Use Search to find music on Spotify and save a rating and note.
+          Your listens live on the Activity tab. Use Search to find music on Spotify and save a rating and note.
           {authDisabled ? ' Sign-in is currently off.' : ''}
         </Text>
-      </View>
+        <View style={styles.actionButtons}>
+          <NativeButton title="Edit profile" onPress={() => navigation.navigate('EditProfile')} style={styles.actionButton} />
+          {!authDisabled ? (
+            <NativeButton title="Logout" variant="danger" onPress={handleLogout} style={styles.actionButton} />
+          ) : null}
+        </View>
+      </SectionCard>
 
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={[styles.editButton, authDisabled && styles.editButtonFull]}
-          onPress={() => navigation.navigate('EditProfile')}
-        >
-          <Text style={styles.editButtonText}>Edit</Text>
-        </TouchableOpacity>
-        {!authDisabled && (
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutButtonText}>Logout</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Favorite Artists */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Favorite Artists</Text>
+      <SectionCard eyebrow="Taste" title="Favorite artists">
         {p.favoriteArtists && p.favoriteArtists.length > 0 ? (
           <FlatList
             data={p.favoriteArtists}
@@ -118,11 +118,9 @@ const ProfileScreen = ({ navigation }) => {
         ) : (
           <Text style={styles.emptyText}>No favorite artists yet</Text>
         )}
-      </View>
+      </SectionCard>
 
-      {/* Favorite Songs */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Favorite Songs</Text>
+      <SectionCard eyebrow="Taste" title="Favorite songs">
         {p.favoriteSongs && p.favoriteSongs.length > 0 ? (
           <FlatList
             data={p.favoriteSongs}
@@ -148,30 +146,25 @@ const ProfileScreen = ({ navigation }) => {
         ) : (
           <Text style={styles.emptyText}>No favorite songs yet</Text>
         )}
-      </View>
-
-    </ScrollView>
+      </SectionCard>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  loadingText: {
-    color: colors.foregroundMuted,
-    fontSize: 16,
+  headerPill: {
+    minWidth: 74,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(82, 121, 111, 0.16)',
+    color: colors.accent,
+    fontWeight: '700',
+    overflow: 'hidden',
+    textAlign: 'center',
   },
   profileHeader: {
     flexDirection: 'row',
-    padding: 20,
     alignItems: 'center',
   },
   profileImage: {
@@ -214,50 +207,14 @@ const styles = StyleSheet.create({
   },
   actionButtons: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 30,
+    gap: spacing.md,
+    marginTop: spacing.md,
   },
-  editButton: {
+  actionButton: {
     flex: 1,
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginRight: 10,
-    alignItems: 'center',
-  },
-  editButtonFull: {
-    marginRight: 0,
-  },
-  editButtonText: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  logoutButton: {
-    flex: 1,
-    backgroundColor: colors.danger,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginLeft: 10,
-    alignItems: 'center',
-  },
-  logoutButtonText: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  section: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.foreground,
-    marginHorizontal: 20,
-    marginBottom: 15,
   },
   carouselContainer: {
-    paddingHorizontal: 20,
+    paddingTop: spacing.xs,
   },
   artistCard: {
     backgroundColor: colors.card,

@@ -1,57 +1,45 @@
-import { useCallback, useEffect, useState } from 'react';
-import API_BASE_URL from './config';
+import { useEffect, useState } from 'react';
+import { getListItemSubtitle } from './domain/models';
+import { useListsController } from './features/lists/useListsController';
+import { ScreenMetrics, ScreenShell } from './lib/platform/web/app';
+import { Button, Modal } from './lib/platform/web/ui';
 
 export default function Lists({ user }) {
+  const {
+    lists,
+    loading,
+    error,
+    setError,
+    kindFilter,
+    setKindFilter,
+    sortKey,
+    setSortKey,
+    sortOrder,
+    setSortOrder,
+    load,
+    createSaving,
+    createError,
+    setCreateError,
+    createList,
+    updateDisplayMode,
+    removeListItem,
+    deleteList: deleteListById,
+    addResults,
+    setAddResults,
+    addLoading,
+    addSavingId,
+    addError,
+    setAddError,
+    searchCatalog,
+    resetCatalogSearch,
+    addSearchItemToList: addSearchItem,
+  } = useListsController({ userId: user?.id });
   const [openMenuListId, setOpenMenuListId] = useState(null);
-  const [lists, setLists] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [kindFilter, setKindFilter] = useState('all');
-  const [sortKey, setSortKey] = useState('updated');
-  const [sortOrder, setSortOrder] = useState('desc');
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newItemKind, setNewItemKind] = useState('album');
-  const [createSaving, setCreateSaving] = useState(false);
-  const [createError, setCreateError] = useState('');
   const [addModalList, setAddModalList] = useState(null);
   const [addQuery, setAddQuery] = useState('');
-  const [addResults, setAddResults] = useState({});
-  const [addLoading, setAddLoading] = useState(false);
-  const [addSavingId, setAddSavingId] = useState('');
-  const [addError, setAddError] = useState('');
-
-  const load = useCallback(async () => {
-    if (!user?.id) return;
-    setError('');
-    try {
-      const params = new URLSearchParams({
-        userId: user.id,
-        kind: kindFilter,
-        sort: sortKey,
-        order: sortOrder,
-      });
-      const r = await fetch(`${API_BASE_URL}/api/lists?${params}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message || 'Failed to load lists');
-      setLists(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setError(e.message || 'Could not load lists');
-      setLists([]);
-    }
-  }, [user?.id, kindFilter, sortKey, sortOrder]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await load();
-      if (!cancelled) setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
 
   useEffect(() => {
     if (!openMenuListId) return;
@@ -75,42 +63,18 @@ export default function Lists({ user }) {
   const handleCreateList = async (e) => {
     e.preventDefault();
     if (!user?.id || !newName.trim()) return;
-    setCreateSaving(true);
-    setCreateError('');
-    try {
-      const r = await fetch(`${API_BASE_URL}/api/lists`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          name: newName.trim(),
-          itemKind: newItemKind,
-          displayMode: 'both',
-        }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message || 'Create failed');
+    const didCreate = await createList({ name: newName, itemKind: newItemKind });
+    if (didCreate) {
       setCreateOpen(false);
       setNewName('');
       setNewItemKind('album');
-      await load();
-    } catch (err) {
-      setCreateError(err.message || 'Create failed');
     }
-    setCreateSaving(false);
   };
 
   const patchDisplayMode = async (listId, displayMode) => {
     if (!user?.id) return;
     try {
-      const r = await fetch(`${API_BASE_URL}/api/lists/${listId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, displayMode }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message);
-      setLists((prev) => prev.map((L) => (L._id === listId ? { ...L, ...data } : L)));
+      await updateDisplayMode(listId, displayMode);
     } catch (e) {
       setError(e.message || 'Update failed');
     }
@@ -122,13 +86,7 @@ export default function Lists({ user }) {
     const namePart = item.title?.trim() ? `"${item.title.trim()}"` : `this ${kindWord}`;
     if (!window.confirm(`Remove ${namePart} from this list?`)) return;
     try {
-      const r = await fetch(
-        `${API_BASE_URL}/api/lists/${listId}/items/by-id/${item._id}?userId=${encodeURIComponent(user.id)}`,
-        { method: 'DELETE' }
-      );
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message);
-      setLists((prev) => prev.map((L) => (L._id === listId ? { ...data } : L)));
+      await removeListItem(listId, item._id);
     } catch (e) {
       setError(e.message || 'Remove failed');
     }
@@ -139,13 +97,7 @@ export default function Lists({ user }) {
     if (!window.confirm('Delete this list and all its items?')) return;
     setOpenMenuListId(null); // close menu after confirm
     try {
-      const r = await fetch(
-        `${API_BASE_URL}/api/lists/${listId}?userId=${encodeURIComponent(user.id)}`,
-        { method: 'DELETE' }
-      );
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message);
-      setLists((prev) => prev.filter((L) => L._id !== listId));
+      await deleteListById(listId);
     } catch (e) {
       setError(e.message || 'Delete failed');
     }
@@ -154,105 +106,27 @@ export default function Lists({ user }) {
   const closeAddModal = () => {
     setAddModalList(null);
     setAddQuery('');
-    setAddResults({});
-    setAddLoading(false);
-    setAddSavingId('');
-    setAddError('');
+    resetCatalogSearch();
   };
 
   const runListSearch = async (e) => {
     e.preventDefault();
     if (!addModalList || !addQuery.trim()) return;
-    const query = addQuery.trim();
-    const type = addModalList.itemKind === 'track' ? 'track' : 'album';
-    setAddLoading(true);
-    setAddError('');
-
-    const fetchSearchJson = async (url) => {
-      const r = await fetch(url);
-      const raw = await r.text();
-      let data = null;
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        data = null;
-      }
-      return { r, data, raw };
-    };
-
-    try {
-      let result = await fetchSearchJson(
-        `${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`
-      );
-
-      if (
-        !result.r.ok &&
-        result.r.status === 404 &&
-        typeof result.raw === 'string' &&
-        result.raw.includes('Cannot GET /api/diary/search')
-      ) {
-        result = await fetchSearchJson(
-          `${API_BASE_URL}/api/spotify/search?query=${encodeURIComponent(query)}&type=${type}`
-        );
-      }
-
-      if (!result.r.ok) throw new Error(result.data?.message || 'Search failed');
-      if (!result.data || typeof result.data !== 'object') {
-        throw new Error('Search response was not valid JSON');
-      }
-      setAddResults(result.data);
-    } catch (err) {
-      setAddResults({});
-      setAddError(err.message || 'Search failed');
-    }
-    setAddLoading(false);
+    await searchCatalog(addQuery, addModalList.itemKind);
   };
 
-  const addSearchItemToList = async (list, rawItem) => {
+  const handleAddSearchItemToList = async (list, rawItem) => {
     if (!user?.id || !list?._id || !rawItem?.id) return;
-    const payload =
-      list.itemKind === 'track'
-        ? {
-            kind: 'track',
-            spotifyId: String(rawItem.id),
-            title: String(rawItem.name || ''),
-            image: rawItem.album?.images?.[0]?.url || '',
-            primaryArtistName: rawItem.artists?.[0]?.name || '',
-            albumName: rawItem.album?.name || '',
-          }
-        : {
-            kind: 'album',
-            spotifyId: String(rawItem.id),
-            title: String(rawItem.name || ''),
-            image: rawItem.images?.[0]?.url || '',
-            primaryArtistName: rawItem.artists?.[0]?.name || '',
-            albumName: '',
-          };
-    setAddSavingId(String(rawItem.id));
-    setAddError('');
     try {
-      const r = await fetch(`${API_BASE_URL}/api/lists/${list._id}/items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: String(user.id),
-          fromSearch: payload,
-        }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.message || 'Add failed');
-      setLists((prev) => prev.map((L) => (L._id === list._id ? { ...data } : L)));
+      await addSearchItem(list, rawItem);
     } catch (err) {
       setAddError(err.message || 'Add failed');
     }
-    setAddSavingId('');
   };
 
   const renderListItem = (list, item) => {
     const mode = list.displayMode || 'both';
-    const subtitle = [item.primaryArtistName, item.kind === 'track' ? item.albumName : null]
-      .filter(Boolean)
-      .join(' · ');
+    const subtitle = getListItemSubtitle(item);
 
     if (mode === 'cover') {
       return (
@@ -296,72 +170,95 @@ export default function Lists({ user }) {
     );
   };
 
+  const kindLabel = kindFilter === 'all' ? 'All' : kindFilter === 'album' ? 'Albums' : 'Tracks';
+  const sortLabel =
+    sortKey === 'updated' ? 'Updated' : sortKey === 'created' ? 'Created' : 'Name';
+
   return (
-    <div className="search-form">
-      <div className="diary-toolbar">
-        {['all', 'album', 'track'].map((k) => (
-          <button key={k} type="button" className={kindBtnClass(k)} onClick={() => setKindFilter(k)}>
-            {k === 'all' ? 'All' : k === 'album' ? 'Album lists' : 'Track lists'}
+    <ScreenShell
+      eyebrow="Collections"
+      title="Lists"
+      subtitle="Organize favorites into touch-friendly collections that can scale cleanly into a future native app."
+      actions={
+        <Button type="button" onClick={() => setCreateOpen(true)}>
+          New list
+        </Button>
+      }
+    >
+      <ScreenMetrics
+        items={[
+          { label: 'Lists', value: lists.length },
+          { label: 'Filter', value: kindLabel },
+          { label: 'Sort', value: sortLabel },
+        ]}
+      />
+
+      <div className="screen-shell__stack">
+        <section className="mobile-section-card">
+          <div className="mobile-section-card__header">
+            <div>
+              <p className="mobile-section-card__eyebrow">Controls</p>
+              <h3 className="mobile-section-card__heading">Shape your list view</h3>
+            </div>
+          </div>
+          <div className="diary-toolbar">
+          {['all', 'album', 'track'].map((k) => (
+            <button key={k} type="button" className={kindBtnClass(k)} onClick={() => setKindFilter(k)}>
+              {k === 'all' ? 'All' : k === 'album' ? 'Album lists' : 'Track lists'}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'updated' ? ' diary-toolbar-btn--active' : ''}`}
+            onClick={() => setSortKey('updated')}
+          >
+            Updated
           </button>
-        ))}
-        <button
-          type="button"
-          className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'updated' ? ' diary-toolbar-btn--active' : ''}`}
-          onClick={() => setSortKey('updated')}
-        >
-          Updated
-        </button>
-        <button
-          type="button"
-          className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'name' ? ' diary-toolbar-btn--active' : ''}`}
-          onClick={() => setSortKey('name')}
-        >
-          Name
-        </button>
-        <button
-          type="button"
-          className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'created' ? ' diary-toolbar-btn--active' : ''}`}
-          onClick={() => setSortKey('created')}
-        >
-          Created
-        </button>
-        <button
-          type="button"
-          className="diary-toolbar-btn diary-toolbar-btn--muted"
-          onClick={() => setSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))}
-        >
-          Order: {sortOrder === 'desc' ? '↓' : '↑'}
-        </button>
-        <button type="button" className="diary-toolbar-btn diary-toolbar-btn--muted" onClick={() => load()}>
-          Refresh
-        </button>
-      </div>
+          <button
+            type="button"
+            className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'name' ? ' diary-toolbar-btn--active' : ''}`}
+            onClick={() => setSortKey('name')}
+          >
+            Name
+          </button>
+          <button
+            type="button"
+            className={`diary-toolbar-btn diary-toolbar-btn--muted${sortKey === 'created' ? ' diary-toolbar-btn--active' : ''}`}
+            onClick={() => setSortKey('created')}
+          >
+            Created
+          </button>
+          <button
+            type="button"
+            className="diary-toolbar-btn diary-toolbar-btn--muted"
+            onClick={() => setSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))}
+          >
+            Order: {sortOrder === 'desc' ? '↓' : '↑'}
+          </button>
+          <button type="button" className="diary-toolbar-btn diary-toolbar-btn--muted" onClick={() => load()}>
+            Refresh
+          </button>
+          </div>
+        </section>
 
-      <div
-        className={
-          lists.length === 0 ? 'lists-new-wrap lists-new-wrap--spacious' : 'lists-new-wrap'
-        }
-      >
-        <button
-          type="button"
-          className="lists-new-btn"
-          onClick={() => setCreateOpen(true)}
-          aria-label="New list"
-        >
-          +
-        </button>
-      </div>
+      {error && <p className="mobile-section-error" style={{ textAlign: 'center' }}>{error}</p>}
 
-      {error && <p style={{ color: 'var(--color-danger)', textAlign: 'center' }}>{error}</p>}
-      {loading && <p style={{ textAlign: 'center', color: 'var(--color-fg-muted)' }}>Loading…</p>}
+      <section className="mobile-section-card">
+        <div className="mobile-section-card__header">
+          <div>
+            <p className="mobile-section-card__eyebrow">Collections</p>
+            <h3 className="mobile-section-card__heading">Your lists</h3>
+          </div>
+        </div>
+      {loading && <p className="mobile-section-empty" style={{ textAlign: 'center' }}>Loading…</p>}
 
       {!loading && lists.length === 0 && (
-        <p style={{ textAlign: 'center', color: 'var(--color-fg-muted)' }}>
+        <p className="mobile-section-empty" style={{ textAlign: 'center' }}>
           No lists yet. Create one or add from your <strong>Diary</strong>.
         </p>
       )}
 
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, width: '100%' }}>
+      <ul className="screen-entry-list" style={{ listStyle: 'none', padding: 0, margin: 0, width: '100%' }}>
         {lists.map((list) => (
           <li key={list._id} className="search-result lists-card" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
             <div className="lists-card-menu lists-card-menu--corner">
@@ -431,128 +328,73 @@ export default function Lists({ user }) {
           </li>
         ))}
       </ul>
+      </section>
 
-      {createOpen && (
-        <div
-          className="search-add-modal-overlay"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'var(--color-modal-overlay, rgba(47, 62, 70, 0.55))',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-          }}
-        >
-          <div
-            className="search-add-modal"
-            style={{
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 16,
-              padding: 24,
-              maxWidth: 400,
-              width: '100%',
-              boxSizing: 'border-box',
-            }}
-          >
-            <h3 style={{ marginTop: 0, textAlign: 'center' }}>New list</h3>
-            <form onSubmit={handleCreateList}>
-              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Name</label>
-              <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="List name" required />
-              <fieldset style={{ border: 'none', margin: '12px 0', padding: 0 }}>
-                <legend style={{ fontWeight: 600, marginBottom: 8 }}>List contains</legend>
-                <label style={{ display: 'block', marginBottom: 6 }}>
-                  <input
-                    type="radio"
-                    name="itemKind"
-                    checked={newItemKind === 'album'}
-                    onChange={() => setNewItemKind('album')}
-                  />{' '}
-                  Albums
-                </label>
-                <label style={{ display: 'block' }}>
-                  <input
-                    type="radio"
-                    name="itemKind"
-                    checked={newItemKind === 'track'}
-                    onChange={() => setNewItemKind('track')}
-                  />{' '}
-                  Songs
-                </label>
-              </fieldset>
-              {createError && <p style={{ color: 'var(--color-danger)', fontSize: '0.9em' }}>{createError}</p>}
-              <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
-                <button type="submit" disabled={createSaving}>
-                  {createSaving ? 'Creating…' : 'Create'}
-                </button>
-                <button
-                  type="button"
-                  style={{ background: 'var(--color-card-solid)', color: 'var(--color-fg)' }}
-                  onClick={() => {
-                    setCreateOpen(false);
-                    setCreateError('');
-                  }}
-                  disabled={createSaving}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          setCreateOpen(false);
+          setCreateError('');
+        }}
+        presentation="sheet"
+        eyebrow="Lists"
+        title="New list"
+        description="Create a list with a short mobile-friendly setup flow."
+      >
+        <form onSubmit={handleCreateList} className="search-add-modal__form">
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Name</label>
+          <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="List name" required />
+          <fieldset className="search-add-modal__fieldset">
+            <legend style={{ fontWeight: 600, marginBottom: 8 }}>List contains</legend>
+            <label className="search-add-modal__radio">
+              <input
+                type="radio"
+                name="itemKind"
+                checked={newItemKind === 'album'}
+                onChange={() => setNewItemKind('album')}
+              />
+              Albums
+            </label>
+            <label className="search-add-modal__radio">
+              <input
+                type="radio"
+                name="itemKind"
+                checked={newItemKind === 'track'}
+                onChange={() => setNewItemKind('track')}
+              />
+              Songs
+            </label>
+          </fieldset>
+          {createError && <p style={{ color: 'var(--color-danger)', fontSize: '0.9em' }}>{createError}</p>}
+          <div className="search-add-modal__actions">
+            <Button type="submit" loading={createSaving} disabled={createSaving}>
+              Create
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setCreateOpen(false);
+                setCreateError('');
+              }}
+              disabled={createSaving}
+            >
+              Cancel
+            </Button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {addModalList && (
-        <div
-          className="search-add-modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="list-add-search-title"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'var(--color-modal-overlay, rgba(47, 62, 70, 0.55))',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-          }}
-          onClick={closeAddModal}
-        >
-          <div
-            className="search-add-modal"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 16,
-              padding: 24,
-              maxWidth: 520,
-              width: '100%',
-              maxHeight: '88vh',
-              overflow: 'auto',
-              boxSizing: 'border-box',
-            }}
-          >
-            <div className="diary-search-popout__header">
-              <button
-                type="button"
-                className="diary-toolbar-btn diary-toolbar-btn--muted diary-search-popout__back"
-                onClick={closeAddModal}
-              >
-                Back
-              </button>
-            </div>
-            <h3 id="list-add-search-title" style={{ marginTop: 0, textAlign: 'center' }}>
-              Add {addModalList.itemKind === 'track' ? 'Songs' : 'Albums'}
-            </h3>
-            <p style={{ marginTop: 0, textAlign: 'center', color: 'var(--color-fg-muted)' }}>
-              {addModalList.name}
-            </p>
+      <Modal
+        open={Boolean(addModalList)}
+        onClose={closeAddModal}
+        presentation="fullscreen"
+        eyebrow="Lists"
+        title={addModalList ? `Add ${addModalList.itemKind === 'track' ? 'songs' : 'albums'}` : 'Add items'}
+        description={addModalList?.name || 'Search and add items to this list.'}
+      >
+        {addModalList ? (
+          <div className="search-add-modal__content">
             <div className="search-form--stacked">
               <form onSubmit={runListSearch}>
                 <input
@@ -567,7 +409,7 @@ export default function Lists({ user }) {
               </form>
             </div>
             {addError && <p style={{ color: 'var(--color-danger)', marginBottom: 0 }}>{addError}</p>}
-            <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
+            <ul className="search-add-modal__list">
               {addModalList.itemKind === 'album' &&
                 Array.isArray(addResults?.albums?.items) &&
                 addResults.albums.items.map((album) => (
@@ -583,7 +425,7 @@ export default function Lists({ user }) {
                       type="button"
                       className="search-result-add"
                       disabled={addSavingId === String(album.id)}
-                      onClick={() => addSearchItemToList(addModalList, album)}
+                      onClick={() => handleAddSearchItemToList(addModalList, album)}
                     >
                       {addSavingId === String(album.id) ? '…' : '+'}
                     </button>
@@ -606,7 +448,7 @@ export default function Lists({ user }) {
                       type="button"
                       className="search-result-add"
                       disabled={addSavingId === String(track.id)}
-                      onClick={() => addSearchItemToList(addModalList, track)}
+                      onClick={() => handleAddSearchItemToList(addModalList, track)}
                     >
                       {addSavingId === String(track.id) ? '…' : '+'}
                     </button>
@@ -614,8 +456,9 @@ export default function Lists({ user }) {
                 ))}
             </ul>
           </div>
-        </div>
-      )}
-    </div>
+        ) : null}
+      </Modal>
+      </div>
+    </ScreenShell>
   );
 }

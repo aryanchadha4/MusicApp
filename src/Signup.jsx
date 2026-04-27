@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { Button, Card, TextField } from './lib/platform/web/ui';
+import { authClient } from './lib/api';
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -47,25 +48,11 @@ const Signup = () => {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data.message || 'Create account failed');
-        return;
-      }
-
+      await authClient.signup({ email, password });
       setSuccess('Account created. Redirecting to login...');
       window.setTimeout(() => navigate('/login'), 900);
     } catch (submitError) {
-      setError('Create account failed. Please try again.');
+      setError(submitError.message || 'Create account failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,7 +60,7 @@ const Signup = () => {
 
   return (
     <div className="auth-page">
-      <section className="card auth-card">
+      <Card className="auth-card" as="section">
         <p className="auth-eyebrow">Create account</p>
         <h2>Start your diary</h2>
         <p className="auth-copy">
@@ -81,47 +68,41 @@ const Signup = () => {
         </p>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <label className="auth-field" htmlFor="signup-email">
-            <span>Email</span>
-            <input
-              id="signup-email"
-              name="email"
-              type="email"
-              placeholder="you@example.com"
-              value={form.email}
-              onChange={handleChange}
-              autoComplete="email"
-              required
-            />
-          </label>
+          <TextField
+            label="Email"
+            id="signup-email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            value={form.email}
+            onChange={handleChange}
+            autoComplete="email"
+            required
+          />
 
-          <label className="auth-field" htmlFor="signup-password">
-            <span>Password</span>
-            <input
-              id="signup-password"
-              name="password"
-              type="password"
-              placeholder="Create a password"
-              value={form.password}
-              onChange={handleChange}
-              autoComplete="new-password"
-              required
-            />
-          </label>
+          <TextField
+            label="Password"
+            id="signup-password"
+            name="password"
+            type="password"
+            placeholder="Create a password"
+            value={form.password}
+            onChange={handleChange}
+            autoComplete="new-password"
+            required
+          />
 
-          <label className="auth-field" htmlFor="signup-confirm-password">
-            <span>Confirm password</span>
-            <input
-              id="signup-confirm-password"
-              name="confirmPassword"
-              type="password"
-              placeholder="Re-enter your password"
-              value={form.confirmPassword}
-              onChange={handleChange}
-              autoComplete="new-password"
-              required
-            />
-          </label>
+          <TextField
+            label="Confirm password"
+            id="signup-confirm-password"
+            name="confirmPassword"
+            type="password"
+            placeholder="Re-enter your password"
+            value={form.confirmPassword}
+            onChange={handleChange}
+            autoComplete="new-password"
+            required
+          />
 
           <p className="auth-hint">Use at least 8 characters.</p>
 
@@ -133,9 +114,9 @@ const Signup = () => {
 
           {success ? <div className="auth-success">{success}</div> : null}
 
-          <button className="auth-submit" type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
-          </button>
+          <Button className="auth-submit" variant="primary" block type="submit" loading={loading} disabled={loading}>
+            Create account
+          </Button>
         </form>
 
         <p className="auth-footer">
@@ -144,7 +125,7 @@ const Signup = () => {
             Log in
           </Link>
         </p>
-      </section>
+      </Card>
     </div>
   );
 };

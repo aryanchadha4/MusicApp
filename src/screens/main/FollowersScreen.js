@@ -9,32 +9,38 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
-import { authAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { userAPI } from '../../services/api';
 
 const FollowersScreen = ({ navigation }) => {
   const route = useRoute();
   const { userId } = route.params;
-  
-  const [followers, setFollowers] = useState([]);
+  const { user } = useAuth();
+  const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
+  const isOwnNetwork = String(userId || '') === String(user?.id || '');
 
   useEffect(() => {
-    loadFollowers();
+    loadFriends();
   }, [userId]);
 
-  const loadFollowers = async () => {
+  const loadFriends = async () => {
     setLoading(true);
     try {
-      const response = await authAPI.getProfile(userId, 'id');
-      setFollowers(response.followers || []);
+      if (!isOwnNetwork) {
+        setFriends([]);
+        return;
+      }
+      const response = await userAPI.getFriends();
+      setFriends(response || []);
     } catch (error) {
-      console.error('Failed to load followers:', error);
+      console.error('Failed to load friends:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const renderFollowerItem = ({ item }) => (
+  const renderFriendItem = ({ item }) => (
     <TouchableOpacity
       style={styles.followerItem}
       onPress={() => navigation.navigate('PublicProfile', { userId: item._id })}
@@ -54,7 +60,7 @@ const FollowersScreen = ({ navigation }) => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#7fd7ff" />
-        <Text style={styles.loadingText}>Loading followers...</Text>
+        <Text style={styles.loadingText}>Loading friends...</Text>
       </View>
     );
   }
@@ -62,12 +68,14 @@ const FollowersScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <FlatList
-        data={followers}
-        renderItem={renderFollowerItem}
+        data={friends}
+        renderItem={renderFriendItem}
         keyExtractor={(item) => item._id}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No followers yet</Text>
+            <Text style={styles.emptyText}>
+              {isOwnNetwork ? 'No friends yet' : 'Friend list is only available for your account'}
+            </Text>
           </View>
         }
       />

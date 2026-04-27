@@ -33,6 +33,9 @@ app.use('/api/diary', diaryRoutes);
 const listsRoutes = require('./routes/lists');
 app.use('/api/lists', listsRoutes);
 
+const networkRoutes = require('./routes/network');
+app.use('/api/network', networkRoutes);
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { Button, Card, TextField } from './lib/platform/web/ui';
 
 const Login = ({ onLogin }) => {
   const [form, setForm] = useState({ email: '', password: '' });
@@ -29,22 +29,12 @@ const Login = ({ onLogin }) => {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        onLogin && onLogin(data);
-      } else {
-        setError(data.message || 'Login failed');
+      const result = await onLogin?.(email, password);
+      if (result && result.success === false) {
+        setError(result.error || 'Login failed. Please try again.');
       }
     } catch (err) {
-      setError('Login failed. Please try again.');
+      setError(err.message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -52,7 +42,7 @@ const Login = ({ onLogin }) => {
 
   return (
     <div className="auth-page">
-      <section className="card auth-card">
+      <Card className="auth-card" as="section">
         <p className="auth-eyebrow">Welcome back</p>
         <h2>Log in to your diary</h2>
         <p className="auth-copy">
@@ -60,33 +50,29 @@ const Login = ({ onLogin }) => {
         </p>
 
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <label className="auth-field" htmlFor="login-email">
-            <span>Email</span>
-            <input
-              id="login-email"
-              name="email"
-              type="email"
-              placeholder="you@example.com"
-              value={form.email}
-              onChange={handleChange}
-              autoComplete="email"
-              required
-            />
-          </label>
+          <TextField
+            label="Email"
+            id="login-email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            value={form.email}
+            onChange={handleChange}
+            autoComplete="email"
+            required
+          />
 
-          <label className="auth-field" htmlFor="login-password">
-            <span>Password</span>
-            <input
-              id="login-password"
-              name="password"
-              type="password"
-              placeholder="Enter your password"
-              value={form.password}
-              onChange={handleChange}
-              autoComplete="current-password"
-              required
-            />
-          </label>
+          <TextField
+            label="Password"
+            id="login-password"
+            name="password"
+            type="password"
+            placeholder="Enter your password"
+            value={form.password}
+            onChange={handleChange}
+            autoComplete="current-password"
+            required
+          />
 
           {error ? (
             <div className="auth-error" role="alert">
@@ -94,9 +80,9 @@ const Login = ({ onLogin }) => {
             </div>
           ) : null}
 
-          <button className="auth-submit" type="submit" disabled={loading}>
-            {loading ? 'Logging in...' : 'Log in'}
-          </button>
+          <Button className="auth-submit" variant="primary" block type="submit" loading={loading} disabled={loading}>
+            Log in
+          </Button>
         </form>
 
         <p className="auth-footer">
@@ -105,7 +91,7 @@ const Login = ({ onLogin }) => {
             Create account
           </Link>
         </p>
-      </section>
+      </Card>
     </div>
   );
 };

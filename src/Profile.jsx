@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSwipeable } from 'react-swipeable';
-import API_BASE_URL from './config';
+import { getProfileDisplayName, getShortReview, getSongArtistName, sortReviewsByDate } from './domain/models';
+import { useFavoriteMediaImages } from './features/profile/useFavoriteMediaImages';
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '';
@@ -14,24 +15,9 @@ const formatDateTime = (dateStr) => {
   return d.toLocaleString(undefined, { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
-const fetchSpotifyImage = async (type, name, artist) => {
-  let query = name;
-  if (artist) query += ' ' + artist;
-  const resp = await fetch(`${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`);
-  const data = await resp.json();
-  if (type === 'artist' && data.artists && data.artists.items && data.artists.items[0]) {
-    return data.artists.items[0].images[0]?.url;
-  }
-  if (type === 'track' && data.tracks && data.tracks.items && data.tracks.items[0]) {
-    return data.tracks.items[0].album.images[0]?.url;
-  }
-  return null;
-};
-
 const Profile = ({ profileInfo }) => {
-  if (!profileInfo) return <div style={{ color: '#aaa', textAlign: 'center', marginTop: 40 }}>No profile info available.</div>;
-  const user = profileInfo;
-  const ratings = (user.ratedAlbums || []).slice().sort((a, b) => new Date(b.reviewedAt) - new Date(a.reviewedAt));
+  const user = profileInfo || {};
+  const ratings = sortReviewsByDate(user.ratedAlbums || []);
   const [carouselIdx, setCarouselIdx] = useState(0);
   const reviewsPerView = 3;
   const handlePrev = () => setCarouselIdx(idx => Math.max(0, idx - 1));
@@ -42,31 +28,12 @@ const Profile = ({ profileInfo }) => {
     trackMouse: true
   });
   const visibleRatings = ratings.slice(carouselIdx, carouselIdx + reviewsPerView);
-  const [artistImages, setArtistImages] = useState({});
-  const [songImages, setSongImages] = useState({});
-  const navigate = useNavigate();
+  const { artistImages, songImages } = useFavoriteMediaImages({
+    favoriteArtists: user.favoriteArtists || [],
+    favoriteSongs: user.favoriteSongs || [],
+  });
 
-  useEffect(() => {
-    const fetchImages = async () => {
-      const artistImgs = {};
-      for (const artist of user.favoriteArtists || []) {
-        if (artist && artist.id && !artistImages[artist.id]) {
-          artistImgs[artist.id] = await fetchSpotifyImage('artist', artist.name);
-        }
-      }
-      setArtistImages(imgs => ({ ...imgs, ...artistImgs }));
-      const songImgs = {};
-      for (const songObj of user.favoriteSongs || []) {
-        const key = songObj.title + ' - ' + songObj.artist;
-        if (songObj.title && !songImages[key]) {
-          songImgs[key] = await fetchSpotifyImage('track', songObj.title, songObj.artist);
-        }
-      }
-      setSongImages(imgs => ({ ...imgs, ...songImgs }));
-    };
-    fetchImages();
-    // eslint-disable-next-line
-  }, [user.favoriteArtists, user.favoriteSongs]);
+  if (!profileInfo) return <div style={{ color: '#aaa', textAlign: 'center', marginTop: 40 }}>No profile info available.</div>;
 
   return (
     <div>
@@ -84,7 +51,7 @@ const Profile = ({ profileInfo }) => {
               Change Profile Picture
             </button>
           </Link>
-          <b style={{ color: '#7fd7ff', fontSize: '1.2em', marginBottom: 2 }}>{user.name ? user.name : '@musicfan123'}</b>
+          <b style={{ color: '#7fd7ff', fontSize: '1.2em', marginBottom: 2 }}>{getProfileDisplayName(user)}</b>
           <small style={{ color: '#aaa', marginBottom: 8 }}>Joined: {formatDate(user.joined)}</small>
           <div style={{ marginTop: 4, marginBottom: 12, fontWeight: 500, color: '#a084ee', fontSize: 16, display: 'flex', gap: 16 }}>
             <Link to="/followers" style={{ color: '#a084ee', textDecoration: 'underline', cursor: 'pointer' }}>
@@ -116,9 +83,9 @@ const Profile = ({ profileInfo }) => {
                     {songImages[key] && <img src={songImages[key]} alt={songObj.title} style={{ width: 32, height: 32, borderRadius: 8 }} />}
                     <span>{songObj.title}</span>
                     <span style={{ color: '#aaa', fontSize: 13, marginLeft: 4 }}>by {songObj.artistId ? (
-                      <Link to={`/artist/${encodeURIComponent(songObj.artistId)}`} style={{ color: '#7fd7ff', fontWeight: 500 }}>{songObj.artist}</Link>
+                      <Link to={`/artist/${encodeURIComponent(songObj.artistId)}`} style={{ color: '#7fd7ff', fontWeight: 500 }}>{getSongArtistName(songObj)}</Link>
                     ) : (
-                      <span style={{ color: '#7fd7ff', fontWeight: 500 }}>{songObj.artist}</span>
+                      <span style={{ color: '#7fd7ff', fontWeight: 500 }}>{getSongArtistName(songObj)}</span>
                     )}</span>
                   </li>
                 );
@@ -155,8 +122,7 @@ const Profile = ({ profileInfo }) => {
           <div style={{ display: 'flex', gap: 16, flex: 1, justifyContent: 'center' }}>
             {visibleRatings.length === 0 && <div style={{ color: '#aaa', textAlign: 'center' }}>No ratings yet</div>}
             {visibleRatings.map((item, idx) => {
-              const reviewWords = (item.review || '').split(' ');
-              const shortReview = reviewWords.length > 3 ? reviewWords.slice(0, 3).join(' ') + '...' : item.review;
+              const shortReview = getShortReview(item.review);
               return (
                 <div key={item.reviewedAt + item.albumName + idx} className="card" style={{ display: 'flex', alignItems: 'center', gap: 16, flexDirection: 'column', textAlign: 'left', background: '#23263a', borderRadius: 10, padding: 16, minWidth: 220, maxWidth: 260, boxShadow: '0 1px 8px #0002', flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>

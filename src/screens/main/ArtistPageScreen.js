@@ -27,15 +27,9 @@ const ArtistPageScreen = ({ navigation }) => {
   const loadArtistData = async () => {
     setLoading(true);
     try {
-      // Load artist info
-      const artistResponse = await spotifyAPI.getArtist(artistId);
-      setArtistInfo(artistResponse);
-
-      // Load artist albums (including EPs)
-      const albumsResponse = await spotifyAPI.getArtist(artistId);
-      if (albumsResponse.albums) {
-        setAlbums(albumsResponse.albums);
-      }
+      const artistResponse = await spotifyAPI.getArtistDetails(artistId);
+      setArtistInfo(artistResponse.artist || null);
+      setAlbums(artistResponse.albums || []);
     } catch (error) {
       console.error('Failed to load artist data:', error);
     } finally {

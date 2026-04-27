@@ -1,9 +1,17 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI } from '../services/api';
-import API_BASE_URL, { AUTH_DISABLED, DEV_USER_EMAIL, DEV_USER_ID } from '../utils/config';
+import { authClient, profileClient } from '../lib/api';
+import { createAuthSessionService } from '../lib/session';
+import { nativeSessionConfig } from '../lib/platform/native/sessionConfig';
+import { nativeSessionStorage } from '../lib/platform/native/sessionStorageAdapter';
 
 const AuthContext = createContext();
+
+const nativeAuthSessionService = createAuthSessionService({
+  authClient,
+  profileClient,
+  sessionStorage: nativeSessionStorage,
+  config: nativeSessionConfig,
+});
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -19,100 +27,49 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const init = async () => {
-      if (AUTH_DISABLED) {
-        try {
-          const profile = await authAPI.getProfile(DEV_USER_EMAIL, 'email');
-          if (profile.message || profile.error) {
-            console.warn(
-              '[AUTH_DISABLED] Profile fetch failed:',
-              profile.message,
-              '— check API_BASE_URL, backend, and MongoDB. Dev user',
-              DEV_USER_EMAIL,
-              'is auto-created on first successful profile request.'
-            );
-            if (DEV_USER_ID) {
-              setUser({
-                id: DEV_USER_ID,
-                username: 'dev',
-                email: DEV_USER_EMAIL,
-                token: '',
-              });
-              setProfileInfo(null);
-            } else {
-              setUser(null);
-              setProfileInfo(null);
-            }
-          } else {
-            setUser({
-              id: profile.id,
-              username: profile.username,
-              email: profile.email,
-              token: '',
-            });
-            setProfileInfo(profile);
-          }
-        } catch (e) {
-          console.error('[AUTH_DISABLED] Failed to load dev profile:', e);
-          setUser(null);
-          setProfileInfo(null);
-        } finally {
-          setLoading(false);
-        }
-        return;
-      }
+    let cancelled = false;
 
+    const init = async () => {
       try {
-        const userData = await AsyncStorage.getItem('user');
-        if (userData) {
-          const parsed = JSON.parse(userData);
-          setUser(parsed);
-          try {
-            const profileData = await authAPI.getProfile(parsed.email);
-            setProfileInfo(profileData);
-          } catch (error) {
-            console.error('Failed to fetch profile:', error);
-          }
+        const session = await nativeAuthSessionService.restoreSession();
+        if (!cancelled) {
+          setUser(session.user);
+          setProfileInfo(session.profile);
         }
       } catch (error) {
         console.error('Failed to load user session:', error);
+        if (!cancelled) {
+          setUser(null);
+          setProfileInfo(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     init();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = async (identifier, password) => {
     try {
-      const response = await authAPI.login(identifier, password);
-      if (response.token) {
-        const userData = {
-          id: response.user.id,
-          username: response.user.username,
-          email: response.user.email,
-          token: response.token,
-        };
-
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        setUser(userData);
-
-        const profileData = await authAPI.getProfile(userData.email);
-        setProfileInfo(profileData);
-
-        return { success: true };
-      } else {
-        return { success: false, error: response.message };
-      }
+      const session = await nativeAuthSessionService.login(identifier, password);
+      setUser(session.user);
+      setProfileInfo(session.profile);
+      return { success: true };
     } catch (error) {
-      return { success: false, error: 'Login failed' };
+      return { success: false, error: error.message || 'Login failed' };
     }
   };
 
   const signup = async (userData) => {
     try {
-      const response = await authAPI.signup(userData);
+      const response = await nativeAuthSessionService.signup(userData);
       if (response.message === 'User created successfully') {
         return { success: true };
       } else {
@@ -124,13 +81,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    if (AUTH_DISABLED) {
-      return;
-    }
     try {
-      await AsyncStorage.removeItem('user');
-      setUser(null);
-      setProfileInfo(null);
+      const session = await nativeAuthSessionService.logout();
+      setUser(session.user);
+      setProfileInfo(session.profile);
     } catch (error) {
       console.error('Failed to logout:', error);
     }
@@ -148,8 +102,8 @@ export const AuthProvider = ({ children }) => {
     signup,
     logout,
     updateProfileInfo,
-    authDisabled: AUTH_DISABLED,
-    apiBaseUrl: API_BASE_URL,
+    authDisabled: nativeSessionConfig.authDisabled,
+    apiBaseUrl: nativeSessionConfig.baseUrl,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -22,7 +22,7 @@ const PublicProfileScreen = ({ navigation }) => {
   
   const [profileInfo, setProfileInfo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isFollowing, setIsFollowing] = useState(false);
+  const [relationshipStatus, setRelationshipStatus] = useState('none');
 
   useEffect(() => {
     loadProfileData();
@@ -31,9 +31,12 @@ const PublicProfileScreen = ({ navigation }) => {
   const loadProfileData = async () => {
     setLoading(true);
     try {
-      const response = await authAPI.getProfile(userId, 'id');
+      const [response, relationship] = await Promise.all([
+        authAPI.getProfile(userId, 'id'),
+        userAPI.getRelationshipState(userId),
+      ]);
       setProfileInfo(response);
-      setIsFollowing(response.followers?.includes(user.id) || false);
+      setRelationshipStatus(relationship?.status || 'none');
     } catch (error) {
       console.error('Failed to load profile:', error);
     } finally {
@@ -43,17 +46,28 @@ const PublicProfileScreen = ({ navigation }) => {
 
   const handleFollowToggle = async () => {
     try {
-      if (isFollowing) {
-        await userAPI.unfollowUser(user.id, userId);
-        setIsFollowing(false);
-      } else {
-        await userAPI.followUser(user.id, userId);
-        setIsFollowing(true);
-      }
+      const response =
+        relationshipStatus === 'friend' || relationshipStatus === 'outgoing_request'
+          ? await userAPI.unfollowUser(user.id, userId)
+          : await userAPI.followUser(user.id, userId);
+      setRelationshipStatus(response?.status || 'none');
       // Refresh profile data
       loadProfileData();
     } catch (error) {
-      Alert.alert('Error', 'Failed to follow/unfollow user');
+      Alert.alert('Error', 'Failed to update friend status');
+    }
+  };
+
+  const getRelationshipLabel = () => {
+    switch (relationshipStatus) {
+      case 'friend':
+        return 'Friends';
+      case 'outgoing_request':
+        return 'Request Sent';
+      case 'incoming_request':
+        return 'Accept Request';
+      default:
+        return 'Add Friend';
     }
   };
 
@@ -66,12 +80,12 @@ const PublicProfileScreen = ({ navigation }) => {
     <View style={styles.reviewCard}>
       <View style={styles.reviewHeader}>
         <Image
-          source={{ uri: item.albumImage || 'https://via.placeholder.com/40' }}
+          source={{ uri: item.image || 'https://via.placeholder.com/40' }}
           style={styles.albumImage}
         />
         <View style={styles.reviewInfo}>
           <Text style={styles.albumTitle}>{item.albumName}</Text>
-          <Text style={styles.artistName}>{item.artistName}</Text>
+          <Text style={styles.artistName}>{item.artist}</Text>
         </View>
         <View style={styles.ratingContainer}>
           <StarRating value={item.rating} disabled size={16} />
@@ -126,13 +140,11 @@ const PublicProfileScreen = ({ navigation }) => {
           <TouchableOpacity
             style={[
               styles.followButton,
-              isFollowing && styles.followingButton
+              (relationshipStatus === 'friend' || relationshipStatus === 'outgoing_request') && styles.followingButton
             ]}
             onPress={handleFollowToggle}
           >
-            <Text style={styles.followButtonText}>
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
+            <Text style={styles.followButtonText}>{getRelationshipLabel()}</Text>
           </TouchableOpacity>
         </View>
       )}

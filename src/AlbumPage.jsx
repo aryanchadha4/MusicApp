@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { Skeleton } from './lib/platform/web/ui';
+import { musicClient, spotifyClient } from './lib/api';
+import { StackScreen } from './lib/platform/web/app';
+import { buildArtistPath, buildUserPath, getSectionRoot } from './lib/navigation/appTabs';
 
-const AlbumPage = ({ user }) => {
+const AlbumPage = ({ section = 'search' }) => {
   const { albumId } = useParams();
   const [albumInfo, setAlbumInfo] = useState(null);
   const [reviews, setReviews] = useState([]);
@@ -17,13 +20,9 @@ const AlbumPage = ({ user }) => {
       setLoading(true);
       setError('');
       try {
-        // Fetch album info from Spotify
-        const albumRes = await fetch(`${API_BASE_URL}/api/spotify/album/${albumId}`);
-        const albumData = await albumRes.json();
+        const albumData = await spotifyClient.getAlbum(albumId);
         setAlbumInfo(albumData);
-        // Fetch all reviews for this album from backend
-        const reviewsRes = await fetch(`${API_BASE_URL}/api/auth/album-reviews?albumId=${albumId}`);
-        const reviewsData = await reviewsRes.json();
+        const reviewsData = await musicClient.getAlbumReviews(albumId);
         setReviews(reviewsData);
         // Calculate histogram and average
         const hist = [0, 0, 0, 0, 0];
@@ -37,50 +36,101 @@ const AlbumPage = ({ user }) => {
         setHistogram(hist);
         setAverageScore(reviewsData.length > 0 ? (totalRating / reviewsData.length).toFixed(1) : 0);
       } catch (err) {
-        setError('Failed to load album info or reviews.');
+        setError(err.message || 'Failed to load album info or reviews.');
       }
       setLoading(false);
     };
     fetchAlbum();
   }, [albumId]);
 
-  if (loading) return <div style={{ color: '#7fd7ff', textAlign: 'center', marginTop: 40 }}>Loading...</div>;
-  if (error) return <div style={{ color: '#ff7f7f', textAlign: 'center', marginTop: 40 }}>{error}</div>;
+  if (loading) {
+    return (
+      <StackScreen backTo={getSectionRoot(section)} eyebrow="Details" title="Album" subtitle="Loading album details…">
+        <div className="screen-shell__stack">
+          <section className="mobile-section-card">
+            <div className="album-screen__hero-main">
+              <Skeleton variant="block" className="album-screen__cover" />
+              <div className="album-screen__hero-copy" style={{ flex: 1 }}>
+                <Skeleton style={{ width: '58%', height: '1.1rem' }} />
+                <Skeleton style={{ width: '42%' }} />
+                <Skeleton style={{ width: '34%' }} />
+              </div>
+            </div>
+          </section>
+          <section className="mobile-section-card">
+            <div className="ui-loading-stack">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="ui-loading-row">
+                  <div className="ui-loading-row__body">
+                    <Skeleton style={{ width: '40%' }} />
+                    <Skeleton style={{ width: '70%' }} />
+                    <Skeleton style={{ width: '82%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </StackScreen>
+    );
+  }
+
+  if (error) {
+    return (
+      <StackScreen backTo={getSectionRoot(section)} eyebrow="Details" title="Album" subtitle="We could not load this album.">
+        <p className="mobile-section-error">{error}</p>
+      </StackScreen>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: 600, margin: '2em auto' }}>
-      <h2 style={{ color: '#a084ee', textAlign: 'center', marginBottom: 16 }}>{albumInfo?.name}</h2>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 24 }}>
-        {albumInfo?.images && albumInfo.images[0] && (
-          <img src={albumInfo.images[0].url} alt={albumInfo.name} style={{ width: 120, height: 120, borderRadius: 12, objectFit: 'cover', boxShadow: '0 2px 16px #0004' }} />
-        )}
-        <div>
-          <div style={{ color: '#7fd7ff', fontSize: 20, fontWeight: 600 }}>
-            {albumInfo?.artists?.map((a, idx) => (
-              <span key={a.id}>
-                <Link to={`/artist/${encodeURIComponent(a.id)}`} style={{ color: '#7fd7ff', textDecoration: 'none' }}>
-                  {a.name}
-                </Link>
-                {idx < albumInfo.artists.length - 1 && ', '}
-              </span>
-            ))}
+    <StackScreen
+      backTo={getSectionRoot(section)}
+      eyebrow="Details"
+      title={albumInfo?.name || 'Album'}
+      subtitle="Album details, review distribution, and recent listener reactions."
+    >
+      <div className="screen-shell__stack album-screen">
+      <section className="mobile-section-card album-screen__hero">
+        <div className="album-screen__hero-main">
+          {albumInfo?.images && albumInfo.images[0] && (
+            <img src={albumInfo.images[0].url} alt={albumInfo.name} className="album-screen__cover" />
+          )}
+          <div className="album-screen__hero-copy">
+            <div className="album-screen__artists">
+              {albumInfo?.artists?.map((a, idx) => (
+                <span key={a.id}>
+                  <Link to={buildArtistPath(section, a.id)} className="album-screen__artist-link">
+                    {a.name}
+                  </Link>
+                  {idx < albumInfo.artists.length - 1 && ', '}
+                </span>
+              ))}
+            </div>
+            <div className="album-screen__meta">{albumInfo?.release_date}</div>
+            <div className="album-screen__meta">{albumInfo?.total_tracks} tracks</div>
           </div>
-          <div style={{ color: '#aaa', fontSize: 15, marginTop: 4 }}>{albumInfo?.release_date}</div>
-          <div style={{ color: '#aaa', fontSize: 15, marginTop: 4 }}>{albumInfo?.total_tracks} tracks</div>
         </div>
-      </div>
-      <h3 style={{ color: '#7fd7ff', marginBottom: 8 }}>Review Distribution</h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-        <div style={{ textAlign: 'center', minWidth: 80 }}>
-          <div style={{ color: '#a084ee', fontSize: 24, fontWeight: 700 }}>{averageScore}</div>
-          <div style={{ color: '#aaa', fontSize: 13 }}>Average</div>
+      </section>
+
+      <section className="mobile-section-card">
+        <div className="mobile-section-card__header">
+          <div>
+            <p className="mobile-section-card__eyebrow">Community</p>
+            <h3 className="mobile-section-card__heading">Review distribution</h3>
+          </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 8, height: 100, position: 'relative' }}>
+        <div className="album-screen__stats">
+          <div className="album-screen__average">
+            <div className="album-screen__average-value">{averageScore}</div>
+            <div className="album-screen__average-label">Average</div>
+          </div>
+          <div className="album-screen__histogram">
           {histogram.map((count, idx) => {
             const maxCount = Math.max(...histogram);
             const barHeight = maxCount > 0 ? (count / maxCount) * 80 : 0;
             return (
-              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+              <div key={idx} className="album-screen__bar-group">
                 <div 
                   style={{ 
                     background: count > 0 ? '#a084ee' : '#333', 
@@ -96,51 +146,46 @@ const AlbumPage = ({ user }) => {
                   onMouseEnter={() => setHoveredBar(idx)}
                   onMouseLeave={() => setHoveredBar(null)}
                 />
-                <div style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>{idx + 1}</div>
+                <div className="album-screen__bar-label">{idx + 1}</div>
               </div>
             );
           })}
           {hoveredBar !== null && histogram[hoveredBar] > 0 && (
-            <div style={{
-              position: 'absolute',
-              top: -40,
-              left: `${(hoveredBar / 5) * 100}%`,
-              transform: 'translateX(-50%)',
-              background: '#23263a',
-              color: '#e0e6ed',
-              padding: '8px 12px',
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 500,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              border: '1px solid #333',
-              zIndex: 10,
-              whiteSpace: 'nowrap'
-            }}>
+            <div className="album-screen__tooltip" style={{ left: `${(hoveredBar / 5) * 100}%` }}>
               {histogram[hoveredBar]} review{histogram[hoveredBar] === 1 ? '' : 's'} with {hoveredBar + 1} star{hoveredBar === 0 ? '' : 's'}
             </div>
           )}
+          </div>
         </div>
-      </div>
-      <div style={{ color: '#7fd7ff', fontWeight: 600, fontSize: 17, marginBottom: 16 }}>
+      <div className="album-screen__review-count">
         {reviews.length} Review{reviews.length === 1 ? '' : 's'} so far
       </div>
-      <h3 style={{ color: '#a084ee', marginBottom: 8 }}>Recent Reviews</h3>
-      <ul style={{ listStyle: 'none', padding: 0 }}>
+      </section>
+
+      <section className="mobile-section-card">
+        <div className="mobile-section-card__header">
+          <div>
+            <p className="mobile-section-card__eyebrow">Recent</p>
+            <h3 className="mobile-section-card__heading">Latest reviews</h3>
+          </div>
+        </div>
+      <ul className="screen-entry-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {reviews.slice(0, 10).map((r, idx) => (
-          <li key={r.userId + r.albumId + idx} style={{ background: '#23263a', borderRadius: 10, padding: 14, marginBottom: 12, boxShadow: '0 1px 8px #0002' }}>
-            <div style={{ color: '#a084ee', fontWeight: 600 }}>
-              <Link to={`/user/${encodeURIComponent(r.userId)}`} style={{ color: '#a084ee', textDecoration: 'none' }}>
+          <li key={r.userId + r.albumId + idx} className="album-screen__review">
+            <div className="album-screen__review-user">
+              <Link to={buildUserPath(section, r.userId)} className="album-screen__review-link">
                 {r.user}
               </Link>
             </div>
-            <div style={{ color: '#7fd7ff', fontWeight: 500 }}>{r.rating}/5</div>
-            <div style={{ color: '#e0e6ed', fontStyle: 'italic', marginTop: 4 }}>{r.review}</div>
-            <div style={{ color: '#aaa', fontSize: 13, marginTop: 4 }}>{r.reviewedAt ? new Date(r.reviewedAt).toLocaleString() : ''}</div>
+            <div className="album-screen__review-rating">{r.rating}/5</div>
+            <div className="album-screen__review-body">{r.review}</div>
+            <div className="album-screen__review-date">{r.reviewedAt ? new Date(r.reviewedAt).toLocaleString() : ''}</div>
           </li>
         ))}
       </ul>
-    </div>
+      </section>
+      </div>
+    </StackScreen>
   );
 };
 

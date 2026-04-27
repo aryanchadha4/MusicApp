@@ -15,7 +15,7 @@ import { userAPI, spotifyAPI } from '../../services/api';
 import StarRating from '../../components/StarRating';
 
 const FeedScreen = ({ navigation }) => {
-  const { user, profileInfo } = useAuth();
+  const { user } = useAuth();
   const [friendsFeed, setFriendsFeed] = useState([]);
   const [popularAlbums, setPopularAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +75,7 @@ const FeedScreen = ({ navigation }) => {
       
       <View style={styles.albumInfo}>
         <Image
-          source={{ uri: item.albumImage || 'https://via.placeholder.com/60' }}
+          source={{ uri: item.image || 'https://via.placeholder.com/60' }}
           style={styles.albumImage}
         />
         <View style={styles.albumDetails}>
@@ -94,14 +94,14 @@ const FeedScreen = ({ navigation }) => {
       onPress={() => navigation.navigate('AlbumPage', { albumId: item.id })}
     >
       <Image
-        source={{ uri: item.images?.[0]?.url || 'https://via.placeholder.com/120' }}
+        source={{ uri: item.image || 'https://via.placeholder.com/120' }}
         style={styles.popularAlbumImage}
       />
       <Text style={styles.popularAlbumTitle} numberOfLines={2}>
-        {item.name}
+        {item.album}
       </Text>
       <Text style={styles.popularArtistName} numberOfLines={1}>
-        {item.artists?.[0]?.name}
+        {item.artist}
       </Text>
     </TouchableOpacity>
   );

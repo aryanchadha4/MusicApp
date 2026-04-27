@@ -184,6 +184,7 @@ const EditProfileScreen = ({ navigation }) => {
     setLoading(true);
     try {
       const data = {
+        email: formData.email || user.email,
         currentPassword: credentialsData.currentPassword,
       };
 

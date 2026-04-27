@@ -11,9 +11,12 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import AppScreen from '../../components/native/AppScreen';
+import SectionCard from '../../components/native/SectionCard';
 import { spotifyAPI } from '../../services/api';
 import StarRating from '../../components/StarRating';
 import { colors } from '../../theme/colors';
+import { radii, spacing } from '../../theme/tokens';
 
 const SearchScreen = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -130,56 +133,66 @@ const SearchScreen = ({ navigation }) => {
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchHeader}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search albums or tracks…"
-          placeholderTextColor={colors.foregroundMuted}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+    <AppScreen
+      eyebrow="Discover"
+      title="Search"
+      subtitle="Start with a query, then move into album and track detail flows without leaving the search section."
+      scroll={false}
+      headerAccessory={<Text style={styles.headerPill}>Search</Text>}
+    >
+      <SectionCard>
+        <View style={styles.searchHeader}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search albums or tracks…"
+            placeholderTextColor={colors.foregroundMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
 
-        <View style={styles.searchTabs}>
-          <TouchableOpacity
-            style={[styles.tab, searchType === 'album' && styles.activeTab]}
-            onPress={() => setSearchType('album')}
-          >
-            <Text style={[styles.tabText, searchType === 'album' && styles.activeTabText]}>Albums</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, searchType === 'track' && styles.activeTab]}
-            onPress={() => setSearchType('track')}
-          >
-            <Text style={[styles.tabText, searchType === 'track' && styles.activeTabText]}>Tracks</Text>
-          </TouchableOpacity>
+          <View style={styles.searchTabs}>
+            <TouchableOpacity
+              style={[styles.tab, searchType === 'album' && styles.activeTab]}
+              onPress={() => setSearchType('album')}
+            >
+              <Text style={[styles.tabText, searchType === 'album' && styles.activeTabText]}>Albums</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, searchType === 'track' && styles.activeTab]}
+              onPress={() => setSearchType('track')}
+            >
+              <Text style={[styles.tabText, searchType === 'track' && styles.activeTabText]}>Tracks</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+      </SectionCard>
+
+      <View style={styles.resultsWrap}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={styles.loadingText}>Searching…</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={results}
+            renderItem={searchType === 'album' ? renderAlbumItem : renderTrackItem}
+            keyExtractor={(item) => item.id}
+            style={styles.resultsList}
+            ListEmptyComponent={
+              searchQuery.trim().length > 2 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>No results</Text>
+                </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>Type at least 3 characters to search Spotify</Text>
+                </View>
+              )
+            }
+          />
+        )}
       </View>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Searching…</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={results}
-          renderItem={searchType === 'album' ? renderAlbumItem : renderTrackItem}
-          keyExtractor={(item) => item.id}
-          style={styles.resultsList}
-          ListEmptyComponent={
-            searchQuery.trim().length > 2 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No results</Text>
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>Type at least 3 characters to search Spotify</Text>
-              </View>
-            )
-          }
-        />
-      )}
 
       <Modal visible={showRateModal} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
@@ -235,18 +248,24 @@ const SearchScreen = ({ navigation }) => {
           </ScrollView>
         </View>
       </Modal>
-    </View>
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  headerPill: {
+    minWidth: 76,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: 'rgba(82, 121, 111, 0.16)',
+    color: colors.accent,
+    fontWeight: '700',
+    overflow: 'hidden',
+    textAlign: 'center',
   },
   searchHeader: {
-    padding: 20,
-    paddingBottom: 10,
+    gap: spacing.md,
   },
   searchInput: {
     backgroundColor: colors.inputBg,
@@ -287,6 +306,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  resultsWrap: {
+    flex: 1,
+    minHeight: 260,
   },
   loadingText: {
     color: colors.foregroundMuted,

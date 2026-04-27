@@ -1,213 +1,76 @@
 import API_BASE_URL from '../utils/config';
+import {
+  AUTH_TOKEN_STORAGE_KEY,
+  authClient,
+  diaryClient,
+  listsClient,
+  musicClient,
+  profileClient,
+  socialClient,
+  spotifyClient,
+} from '../lib/api';
+import { configurePlatformApiRuntime } from '../lib/session';
+import { nativeSessionStorage } from '../lib/platform/native/sessionStorageAdapter';
 
-export const AUTH_TOKEN_STORAGE_KEY = 'music_diary_token';
+configurePlatformApiRuntime({
+  baseUrl: API_BASE_URL,
+  sessionStorage: nativeSessionStorage,
+});
 
-const getAuthHeaders = (includeJson = true) => {
-  const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-  const headers = {};
-  if (includeJson) {
-    headers['Content-Type'] = 'application/json';
-  }
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-};
+export { AUTH_TOKEN_STORAGE_KEY };
 
-// Authentication APIs
 export const authAPI = {
-  // Login
-  login: async (email, password) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    return response.json();
-  },
-
-  me: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-      headers: getAuthHeaders(false),
-    });
-    return response.json();
-  },
-
-  // Signup
-  signup: async (userData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData),
-    });
-    return response.json();
-  },
-
-  // Get user profile
-  getProfile: async (identifier, type = 'email') => {
-    const param = type === 'email' ? 'email' : 'id';
-    const response = await fetch(`${API_BASE_URL}/api/auth/profile?${param}=${encodeURIComponent(identifier)}`);
-    return response.json();
-  },
-
-  // Edit profile
-  editProfile: async (profileData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/edit-profile`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(profileData),
-    });
-    return response.json();
-  },
-
-  // Change credentials
-  changeCredentials: async (credentialsData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/change-credentials`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(credentialsData),
-    });
-    return response.json();
-  },
+  login: authClient.login,
+  me: authClient.me,
+  signup: authClient.signup,
+  getProfile: (identifier, type = 'email') =>
+    type === 'id'
+      ? profileClient.getProfileById(identifier)
+      : profileClient.getProfileByEmail(identifier),
+  editProfile: profileClient.updateProfile,
+  changeCredentials: profileClient.changeCredentials,
 };
 
-// User interaction APIs
 export const userAPI = {
-  // Search users
-  searchUsers: async (query) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/search-users?query=${encodeURIComponent(query)}`);
-    return response.json();
-  },
-
-  // Follow user
-  followUser: async (userId, followId) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/follow`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, followId }),
-    });
-    return response.json();
-  },
-
-  // Unfollow user
-  unfollowUser: async (userId, unfollowId) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/unfollow`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, unfollowId }),
-    });
-    return response.json();
-  },
-
-  // Get friends feed
-  getFriendsFeed: async (userId) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/friends-feed?userId=${userId}`);
-    return response.json();
-  },
+  searchUsers: socialClient.searchUsers,
+  getFriendRequests: socialClient.getFriendRequests,
+  getFriends: socialClient.getFriends,
+  getRelationshipState: socialClient.getRelationshipState,
+  followUser: socialClient.followUser,
+  unfollowUser: socialClient.unfollowUser,
+  getFriendsFeed: socialClient.getFriendsFeed,
 };
 
-// Music APIs
 export const musicAPI = {
-  // Rate album
-  rateAlbum: async (albumData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/rate-album`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(albumData),
-    });
-    return response.json();
-  },
-
-  // Edit review
-  editReview: async (reviewData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/edit-review`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reviewData),
-    });
-    return response.json();
-  },
-
-  // Delete review
-  deleteReview: async (reviewData) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/delete-review`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reviewData),
-    });
-    return response.json();
-  },
-
-  // Get album reviews
-  getAlbumReviews: async (albumId) => {
-    const response = await fetch(`${API_BASE_URL}/api/auth/album-reviews?albumId=${albumId}`);
-    return response.json();
-  },
+  rateAlbum: musicClient.rateAlbum,
+  editReview: musicClient.editReview,
+  deleteReview: musicClient.deleteReview,
+  getAlbumReviews: musicClient.getAlbumReviews,
 };
 
-// Diary (append-only listen log)
 export const diaryAPI = {
-  createEntry: async (body) => {
-    const response = await fetch(`${API_BASE_URL}/api/diary/entries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return response.json();
-  },
-
-  getEntries: async ({ userId, kind = 'all', sort = 'date', order = 'desc' }) => {
-    const params = new URLSearchParams({
-      userId,
-      kind,
-      sort,
-      order,
-    });
-    const response = await fetch(`${API_BASE_URL}/api/diary/entries?${params}`);
-    return response.json();
-  },
-
-  updateEntry: async (entryId, body) => {
-    const response = await fetch(`${API_BASE_URL}/api/diary/entries/${entryId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return response.json();
-  },
-
-  deleteEntry: async (entryId, userId) => {
-    const response = await fetch(
-      `${API_BASE_URL}/api/diary/entries/${entryId}?userId=${encodeURIComponent(userId)}`,
-      { method: 'DELETE' }
-    );
-    return response.json();
-  },
+  createEntry: diaryClient.createEntry,
+  getEntries: diaryClient.getEntries,
+  updateEntry: diaryClient.updateEntry,
+  deleteEntry: diaryClient.deleteEntry,
 };
 
-// Spotify APIs
+export const listsAPI = {
+  getLists: listsClient.getLists,
+  getList: listsClient.getList,
+  createList: listsClient.createList,
+  updateList: listsClient.updateList,
+  deleteList: listsClient.deleteList,
+  addItem: listsClient.addItem,
+  removeItem: listsClient.removeItem,
+};
+
 export const spotifyAPI = {
-  // Search
-  search: async (query, type) => {
-    const response = await fetch(`${API_BASE_URL}/api/diary/search?query=${encodeURIComponent(query)}&type=${type}`);
-    return response.json();
-  },
-
-  // Get album details
-  getAlbum: async (albumId) => {
-    const response = await fetch(`${API_BASE_URL}/api/spotify/album/${albumId}`);
-    return response.json();
-  },
-
-  // Get artist details
-  getArtist: async (artistId) => {
-    const response = await fetch(`${API_BASE_URL}/api/spotify/artist/${artistId}`);
-    return response.json();
-  },
-
-  // Get top albums
-  getTopAlbums: async () => {
-    const response = await fetch(`${API_BASE_URL}/api/spotify/top-albums`);
-    return response.json();
-  },
-}; 
+  search: spotifyClient.search.bind(spotifyClient),
+  searchItems: spotifyClient.searchItems.bind(spotifyClient),
+  lookupImage: spotifyClient.lookupImage.bind(spotifyClient),
+  getAlbum: spotifyClient.getAlbum,
+  getArtist: spotifyClient.getArtist,
+  getArtistDetails: spotifyClient.getArtistDetails,
+  getTopAlbums: spotifyClient.getTopAlbums,
+};

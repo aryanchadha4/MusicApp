@@ -2,19 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const MusicList = require('../models/MusicList');
 const DiaryEntry = require('../models/DiaryEntry');
-const User = require('../models/User');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const router = express.Router();
-
-async function assertUser(userId) {
-  if (!userId) return { error: { status: 400, message: 'Missing userId' } };
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return { error: { status: 400, message: 'Invalid userId' } };
-  }
-  const user = await User.findById(userId);
-  if (!user) return { error: { status: 404, message: 'User not found' } };
-  return { user };
-}
 
 async function getOwnedList(listId, userId) {
   if (!mongoose.Types.ObjectId.isValid(listId)) {
@@ -29,11 +19,9 @@ async function getOwnedList(listId, userId) {
 }
 
 // GET /api/lists?userId=&kind=&sort=&order=
-router.get('/', async (req, res) => {
-  const { userId, kind = 'all', sort = 'updated', order = 'desc' } = req.query;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
+router.get('/', requireAuth, async (req, res) => {
+  const { kind = 'all', sort = 'updated', order = 'desc' } = req.query;
+  const userId = req.user._id.toString();
 
   try {
     const filter = { userId };
@@ -61,11 +49,8 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/lists/:id?userId=
-router.get('/:id', async (req, res) => {
-  const { userId } = req.query;
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
-
+router.get('/:id', requireAuth, async (req, res) => {
+  const userId = req.user._id.toString();
   const r = await getOwnedList(req.params.id, userId);
   if (r.error) return res.status(r.error.status).json({ message: r.error.message });
 
@@ -73,11 +58,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/lists
-router.post('/', async (req, res) => {
-  const { userId, name, itemKind, displayMode } = req.body;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
+router.post('/', requireAuth, async (req, res) => {
+  const { name, itemKind, displayMode } = req.body;
+  const userId = req.user._id.toString();
 
   if (!name || !String(name).trim()) {
     return res.status(400).json({ message: 'Missing name' });
@@ -105,12 +88,9 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /api/lists/:id
-router.patch('/:id', async (req, res) => {
-  const { userId, name, displayMode } = req.body;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
-
+router.patch('/:id', requireAuth, async (req, res) => {
+  const { name, displayMode } = req.body;
+  const userId = req.user._id.toString();
   const r = await getOwnedList(req.params.id, userId);
   if (r.error) return res.status(r.error.status).json({ message: r.error.message });
 
@@ -136,12 +116,8 @@ router.patch('/:id', async (req, res) => {
 });
 
 // DELETE /api/lists/:id?userId=
-router.delete('/:id', async (req, res) => {
-  const { userId } = req.query;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
-
+router.delete('/:id', requireAuth, async (req, res) => {
+  const userId = req.user._id.toString();
   const r = await getOwnedList(req.params.id, userId);
   if (r.error) return res.status(r.error.status).json({ message: r.error.message });
 
@@ -154,12 +130,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 // DELETE /api/lists/:id/items/by-id/:itemSubdocId?userId=  (must be before POST :id/items if any path overlap — N/A)
-router.delete('/:id/items/by-id/:itemSubdocId', async (req, res) => {
-  const { userId } = req.query;
+router.delete('/:id/items/by-id/:itemSubdocId', requireAuth, async (req, res) => {
+  const userId = req.user._id.toString();
   const { itemSubdocId } = req.params;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
 
   if (!mongoose.Types.ObjectId.isValid(itemSubdocId)) {
     return res.status(400).json({ message: 'Invalid item id' });
@@ -185,11 +158,9 @@ router.delete('/:id/items/by-id/:itemSubdocId', async (req, res) => {
 
 // POST /api/lists/:id/items — body: { userId, diaryEntryId } OR { userId, fromSearch: { kind, spotifyId, title, ... } }
 // Prefer fromSearch when present so Search→list never fails on stray/invalid diaryEntryId.
-router.post('/:id/items', async (req, res) => {
-  const { userId, diaryEntryId, fromSearch } = req.body;
-
-  const u = await assertUser(userId);
-  if (u.error) return res.status(u.error.status).json({ message: u.error.message });
+router.post('/:id/items', requireAuth, async (req, res) => {
+  const { diaryEntryId, fromSearch } = req.body;
+  const userId = req.user._id.toString();
 
   const r = await getOwnedList(req.params.id, userId);
   if (r.error) return res.status(r.error.status).json({ message: r.error.message });

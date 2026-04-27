@@ -1,13 +1,29 @@
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import Home from './Home';
+import Search from './Search';
+import Activity from './Activity';
 import Diary from './Diary';
 import Lists from './Lists';
+import Network from './Network';
+import ProfileHome from './ProfileHome';
+import FriendsDirectory from './FriendsDirectory';
+import AlbumPage from './AlbumPage';
+import ArtistPage from './ArtistPage';
+import PublicProfile from './PublicProfile';
+import MyReviews from './MyReviews';
+import EditProfile from './EditProfile';
 import Login from './Login';
 import Signup from './Signup';
-import { useState, useEffect } from 'react';
+import { Spinner } from './lib/platform/web/ui';
+import { diaryClient } from './lib/api';
+import { useSessionBootstrap } from './hooks/useSessionBootstrap';
+import { AppChrome } from './lib/platform/web/app';
+import { usePersistentWebAppShell } from './hooks/usePersistentWebAppShell';
+import { APP_TABS, buildUserPath, normalizeSectionKey } from './lib/navigation/appTabs';
+import { getStoredWebAppShellStateSync } from './lib/platform/web/appStateStorageAdapter';
 import './App.css';
-import API_BASE_URL, { AUTH_DISABLED, DEV_USER_EMAIL } from './config';
-
-const AUTH_TOKEN_STORAGE_KEY = 'music_diary_token';
+import { AUTH_DISABLED } from './config';
 
 /** Drop focus from nav links after navigation so :focus doesn’t look like a “selected” tab (desktop Chrome). */
 function NavRouteBlur() {
@@ -24,162 +40,157 @@ function NavRouteBlur() {
   return null;
 }
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [profileInfo, setProfileInfo] = useState(null);
+const APP_TAB_KEYS = new Set(APP_TABS.map((tab) => tab.key));
 
-  useEffect(() => {
-    const load = async () => {
-      if (AUTH_DISABLED) {
-        try {
-          const res = await fetch(
-            `${API_BASE_URL}/api/auth/profile?email=${encodeURIComponent(DEV_USER_EMAIL)}`
-          );
-          const data = await res.json();
-          if (data.message) {
-            console.warn('[AUTH_DISABLED] Profile error:', data.message);
-            setUser(null);
-            setProfileInfo(null);
-            return;
-          }
-          setUser({
-            id: data.id,
-            username: data.username,
-            email: data.email,
-          });
-          setProfileInfo(data);
-        } catch (e) {
-          console.error('[AUTH_DISABLED] Failed to load profile', e);
-          setUser(null);
-          setProfileInfo(null);
-        }
-        return;
-      }
+function resolveSection(section) {
+  return APP_TAB_KEYS.has(section) ? section : null;
+}
 
-      const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-      if (!token) {
-        setUser(null);
-        setProfileInfo(null);
-        return;
-      }
+function SectionAlbumRoute() {
+  const { section } = useParams();
+  const resolvedSection = resolveSection(section);
+  return resolvedSection ? <AlbumPage section={resolvedSection} /> : <Navigate to="/home" replace />;
+}
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const profile = await response.json().catch(() => ({}));
-        if (profile?.message) {
-          window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-          setUser(null);
-          setProfileInfo(null);
-          return;
-        }
-        setUser({
-          id: profile.id,
-          username: profile.username,
-          email: profile.email,
-        });
-        setProfileInfo(profile);
-      } catch (e) {
-        window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-        setUser(null);
-        setProfileInfo(null);
-      }
-    };
+function SectionArtistRoute({ onAlbumRated }) {
+  const { section } = useParams();
+  const resolvedSection = resolveSection(section);
+  return resolvedSection ? <ArtistPage section={resolvedSection} onAlbumRated={onAlbumRated} /> : <Navigate to="/home" replace />;
+}
 
-    load();
-  }, []);
+function SectionPublicProfileRoute({ user, setProfileInfo }) {
+  const { section } = useParams();
+  const resolvedSection = resolveSection(section);
+  return resolvedSection ? (
+    <PublicProfile section={resolvedSection} user={user} setProfileInfo={setProfileInfo} />
+  ) : (
+    <Navigate to="/home" replace />
+  );
+}
 
-  useEffect(() => {
-    if (AUTH_DISABLED || !user?.email || profileInfo?.email === user.email) return;
-    fetch(`${API_BASE_URL}/api/auth/profile?email=${encodeURIComponent(user.email)}`)
-      .then((res) => res.json())
-      .then((data) => setProfileInfo(data));
-  }, [user, profileInfo?.email]);
+function SectionPublicReviewsRoute({ user, profileInfo }) {
+  const { section, id } = useParams();
+  const resolvedSection = resolveSection(section);
+  return resolvedSection ? (
+    <MyReviews
+      section={resolvedSection}
+      backTo={buildUserPath(resolvedSection, id)}
+      user={user}
+      profileInfo={profileInfo}
+      isPublic
+    />
+  ) : (
+    <Navigate to="/home" replace />
+  );
+}
 
-  const handleLogin = (authPayload) => {
-    const nextUser = authPayload?.user;
-    const token = authPayload?.token;
-    if (!nextUser || !token) return;
-    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-    setUser(nextUser);
-    setProfileInfo(null);
-  };
+function LegacyUserRedirect() {
+  const { id } = useParams();
+  return <Navigate to={buildUserPath('network', id)} replace />;
+}
 
-  const handleLogout = () => {
-    if (AUTH_DISABLED) return;
-    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-    setUser(null);
-    setProfileInfo(null);
-    window.location.href = '/';
-  };
+function LegacyAlbumRedirect() {
+  const { albumId } = useParams();
+  return <Navigate to={`/search/album/${encodeURIComponent(albumId)}`} replace />;
+}
 
-  const handleDiaryEntrySave = async (entry) => {
-    if (!user?.id) throw new Error('Not signed in');
-    const res = await fetch(`${API_BASE_URL}/api/diary/entries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id, ...entry }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to save diary entry');
-    return data;
-  };
+function LegacyArtistRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/search/artist/${encodeURIComponent(id)}`} replace />;
+}
 
-  const showApp = AUTH_DISABLED ? user && profileInfo : user;
+function AppRouterShell({
+  showApp,
+  restoredAppPath,
+  profileInfo,
+  setProfileInfo,
+  user,
+  sessionLoading,
+  handleLogin,
+  handleLogout,
+  handleDiaryEntrySave,
+}) {
+  const { activeTabKey, tabTargets } = usePersistentWebAppShell({ enabled: !!showApp });
+  const loadingScreen = (
+    <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-fg-muted)' }}>
+      <span className="ui-loading-inline">
+        <Spinner size="sm" />
+        Loading…
+      </span>
+    </div>
+  );
 
   const devSetup = (
     <div style={{ padding: 24, maxWidth: 560, margin: '0 auto' }}>
       <p>
-        <strong>Dev mode:</strong> start the API and MongoDB. Set <code>VITE_API_BASE_URL</code> in{' '}
-        <code>.env</code> if the API is not at <code>http://localhost:5001</code>. A generic dev account is
-        created on first profile request.
+        <strong>Dev mode:</strong> start the API and MongoDB. Set <code>VITE_API_BASE_URL</code> in <code>.env</code>{' '}
+        if the API is not at <code>http://localhost:5001</code>. A generic dev account is created on first profile
+        request.
       </p>
     </div>
   );
 
   return (
-    <Router>
+    <>
       <NavRouteBlur />
-      <div className="app-shell">
-        <h1>Music Diary</h1>
-        {showApp && !AUTH_DISABLED && (
-          <button type="button" className="app-logout" onClick={handleLogout}>
-            Logout
-          </button>
-        )}
-        {showApp && (
-          <nav>
-            <div className="nav-main">
-              <Link to="/diary" className="nav-main__link">
-                Diary
-              </Link>
-              <Link to="/lists" className="nav-main__link">
-                Lists
-              </Link>
-            </div>
-          </nav>
-        )}
+      <AppChrome
+        showTabs={!!showApp}
+        showLogout={showApp && !AUTH_DISABLED}
+        onLogout={handleLogout}
+        activeTabKey={activeTabKey}
+        tabTargets={tabTargets}
+      >
         <Routes>
+          {showApp && <Route path="/home" element={<Home user={user} profileInfo={profileInfo} />} />}
+          {showApp && <Route path="/search" element={<Search />} />}
+          {showApp && <Route path="/network" element={<Network user={user} />} />}
+          {showApp && <Route path="/activity" element={<Activity profileInfo={profileInfo} />} />}
+          {showApp && <Route path="/activity/diary" element={<Diary user={user} onDiaryEntrySave={handleDiaryEntrySave} />} />}
+          {showApp && <Route path="/activity/lists" element={<Lists user={user} />} />}
+          {showApp && <Route path="/profile" element={<ProfileHome profileInfo={profileInfo} onLogout={handleLogout} />} />}
           {showApp && (
             <Route
-              path="/diary"
-              element={<Diary user={user} onDiaryEntrySave={handleDiaryEntrySave} setProfileInfo={setProfileInfo} />}
+              path="/profile/edit"
+              element={<EditProfile backTo="/profile" profileInfo={profileInfo} setProfileInfo={setProfileInfo} />}
             />
           )}
-          {showApp && <Route path="/lists" element={<Lists user={user} />} />}
+          {showApp && (
+            <Route
+              path="/profile/reviews"
+              element={<MyReviews section="profile" backTo="/profile" user={user} profileInfo={profileInfo} />}
+            />
+          )}
+          {showApp && <Route path="/profile/friends" element={<FriendsDirectory user={user} />} />}
+          {showApp && <Route path="/:section/album/:albumId" element={<SectionAlbumRoute />} />}
+          {showApp && <Route path="/:section/artist/:id" element={<SectionArtistRoute onAlbumRated={handleDiaryEntrySave} />} />}
+          {showApp && (
+            <Route path="/:section/users/:id" element={<SectionPublicProfileRoute user={user} setProfileInfo={setProfileInfo} />} />
+          )}
+          {showApp && (
+            <Route
+              path="/:section/users/:id/reviews"
+              element={<SectionPublicReviewsRoute user={user} profileInfo={profileInfo} />}
+            />
+          )}
+          {showApp && <Route path="/diary" element={<Navigate to="/activity/diary" replace />} />}
+          {showApp && <Route path="/lists" element={<Navigate to="/activity/lists" replace />} />}
+          {showApp && <Route path="/user/:id" element={<LegacyUserRedirect />} />}
+          {showApp && <Route path="/album/:albumId" element={<LegacyAlbumRedirect />} />}
+          {showApp && <Route path="/artist/:id" element={<LegacyArtistRedirect />} />}
+          {showApp && <Route path="/my-reviews" element={<Navigate to="/profile/reviews" replace />} />}
+          {showApp && <Route path="/edit-profile" element={<Navigate to="/profile/edit" replace />} />}
+          {showApp && <Route path="/followers" element={<Navigate to="/profile/friends" replace />} />}
+          {showApp && <Route path="/following" element={<Navigate to="/profile/friends" replace />} />}
           {!AUTH_DISABLED && (
             <Route
               path="/login"
-              element={user ? <Navigate to="/diary" replace /> : <Login onLogin={handleLogin} />}
+              element={sessionLoading ? loadingScreen : user ? <Navigate to={restoredAppPath} replace /> : <Login onLogin={handleLogin} />}
             />
           )}
           {!AUTH_DISABLED && (
             <Route
               path="/signup"
-              element={user ? <Navigate to="/diary" replace /> : <Signup />}
+              element={sessionLoading ? loadingScreen : user ? <Navigate to={restoredAppPath} replace /> : <Signup />}
             />
           )}
           <Route
@@ -187,19 +198,62 @@ function App() {
             element={
               AUTH_DISABLED ? (
                 showApp ? (
-                  <Navigate to="/diary" replace />
+                  <Navigate to={restoredAppPath} replace />
                 ) : (
                   devSetup
                 )
               ) : user ? (
-                <Navigate to="/diary" replace />
+                <Navigate to={restoredAppPath} replace />
+              ) : sessionLoading ? (
+                loadingScreen
               ) : (
                 <Login onLogin={handleLogin} />
               )
             }
           />
+          {showApp && <Route path="*" element={<Navigate to={`/${normalizeSectionKey('home')}`} replace />} />}
         </Routes>
-      </div>
+      </AppChrome>
+    </>
+  );
+}
+
+function App() {
+  const {
+    user,
+    profileInfo,
+    setProfileInfo,
+    loading: sessionLoading,
+    login: handleLogin,
+    logout: logoutSession,
+  } = useSessionBootstrap();
+
+  const handleLogout = async () => {
+    if (AUTH_DISABLED) return;
+    await logoutSession();
+  };
+
+  const handleDiaryEntrySave = async (entry) => {
+    if (!user?.id) throw new Error('Not signed in');
+    return diaryClient.createEntry({ userId: user.id, ...entry });
+  };
+
+  const showApp = AUTH_DISABLED ? user && profileInfo : user;
+  const restoredAppPath = getStoredWebAppShellStateSync().lastPath || '/home';
+
+  return (
+    <Router>
+      <AppRouterShell
+        showApp={showApp}
+        restoredAppPath={restoredAppPath}
+        profileInfo={profileInfo}
+        setProfileInfo={setProfileInfo}
+        user={user}
+        sessionLoading={sessionLoading}
+        handleLogin={handleLogin}
+        handleLogout={handleLogout}
+        handleDiaryEntrySave={handleDiaryEntrySave}
+      />
     </Router>
   );
 }

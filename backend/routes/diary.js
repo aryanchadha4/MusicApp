@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const DiaryEntry = require('../models/DiaryEntry');
-const User = require('../models/User');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const router = express.Router();
 let spotifyToken = null;
@@ -28,9 +28,8 @@ async function getSpotifyToken() {
 }
 
 // POST /api/diary/entries
-router.post('/entries', async (req, res) => {
+router.post('/entries', requireAuth, async (req, res) => {
   const {
-    userId,
     kind,
     spotifyId,
     title,
@@ -43,18 +42,16 @@ router.post('/entries', async (req, res) => {
     notes,
     loggedAt,
   } = req.body;
+  const userId = req.user._id.toString();
 
-  if (!userId || !kind || !spotifyId || !title || rating == null) {
-    return res.status(400).json({ message: 'Missing required fields: userId, kind, spotifyId, title, rating' });
+  if (!kind || !spotifyId || !title || rating == null) {
+    return res.status(400).json({ message: 'Missing required fields: kind, spotifyId, title, rating' });
   }
   if (!['album', 'track'].includes(kind)) {
     return res.status(400).json({ message: 'kind must be album or track' });
   }
 
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
     const entry = new DiaryEntry({
       userId,
       kind,
@@ -77,16 +74,11 @@ router.post('/entries', async (req, res) => {
 });
 
 // GET /api/diary/entries?userId=&kind=&sort=&order=
-router.get('/entries', async (req, res) => {
-  const { userId, kind, sort = 'date', order = 'desc' } = req.query;
-  if (!userId) {
-    return res.status(400).json({ message: 'Missing userId' });
-  }
+router.get('/entries', requireAuth, async (req, res) => {
+  const { kind, sort = 'date', order = 'desc' } = req.query;
+  const userId = req.user._id.toString();
 
   try {
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
     const filter = { userId };
     if (kind && kind !== 'all') {
       if (!['album', 'track'].includes(kind)) {
@@ -130,13 +122,10 @@ router.get('/search', async (req, res) => {
 });
 
 // PATCH /api/diary/entries/:id
-router.patch('/entries/:id', async (req, res) => {
+router.patch('/entries/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { userId, rating, notes, loggedAt } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({ message: 'Missing userId' });
-  }
+  const { rating, notes, loggedAt } = req.body;
+  const userId = req.user._id.toString();
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ message: 'Invalid entry id' });
   }
@@ -160,13 +149,9 @@ router.patch('/entries/:id', async (req, res) => {
 });
 
 // DELETE /api/diary/entries/:id
-router.delete('/entries/:id', async (req, res) => {
+router.delete('/entries/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { userId } = req.query;
-
-  if (!userId) {
-    return res.status(400).json({ message: 'Missing userId' });
-  }
+  const userId = req.user._id.toString();
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ message: 'Invalid entry id' });
   }

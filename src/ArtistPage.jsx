@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { spotifyClient } from './lib/api';
+import { StackScreen } from './lib/platform/web/app';
+import { Button, Modal, TextField } from './lib/platform/web/ui';
+import { buildAlbumPath, getSectionRoot } from './lib/navigation/appTabs';
 
 const StarRating = ({ value, onChange }) => {
   return (
@@ -23,7 +26,7 @@ const StarRating = ({ value, onChange }) => {
   );
 };
 
-const ArtistPage = ({ onAlbumRated }) => {
+const ArtistPage = ({ onAlbumRated, section = 'search' }) => {
   const { id } = useParams();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
@@ -46,10 +49,7 @@ const ArtistPage = ({ onAlbumRated }) => {
       setLoading(true);
       setError('');
       try {
-        // Fetch artist info
-        const resp = await fetch(`${API_BASE_URL}/api/spotify/artist/${id}`);
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.message || 'Failed to fetch artist');
+        const data = await spotifyClient.getArtistDetails(id);
         setArtist(data.artist);
         setAlbums(data.albums);
         setFeatured(data.featuredOn);
@@ -102,9 +102,15 @@ const ArtistPage = ({ onAlbumRated }) => {
   };
 
   return (
-    <div style={{ maxWidth: 700, margin: '2em auto' }}>
-      {loading && <div>Loading...</div>}
-      {error && <div style={{ color: '#ff7f7f' }}>{error}</div>}
+    <StackScreen
+      backTo={getSectionRoot(section)}
+      eyebrow="Details"
+      title={artist?.name || 'Artist'}
+      subtitle="Browse albums, featured appearances, and jump straight into rating from the same stack."
+    >
+      <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      {loading && <div className="mobile-section-empty">Loading…</div>}
+      {error && <div className="mobile-section-error">{error}</div>}
       {artist && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 24 }}>
@@ -140,7 +146,7 @@ const ArtistPage = ({ onAlbumRated }) => {
                     }}
                   >
                     {album.images && album.images[0] && <img src={album.images[0].url} alt={album.name} style={{ width: 100, height: 100, borderRadius: 8, objectFit: 'cover', marginBottom: 8 }} />}
-                    <Link to={`/album/${encodeURIComponent(album.id)}`} style={{ color: '#a084ee', fontWeight: 700, cursor: 'pointer' }}>{album.name}</Link>
+                    <Link to={buildAlbumPath(section, album.id)} style={{ color: '#a084ee', fontWeight: 700, cursor: 'pointer' }}>{album.name}</Link>
                     <div style={{ color: '#7fd7ff', fontSize: 13 }}>{album.release_date}</div>
                     <button onClick={() => openReviewModal(album)} style={{ marginTop: 8 }}>Review</button>
                   </li>
@@ -155,7 +161,7 @@ const ArtistPage = ({ onAlbumRated }) => {
                 {featured.map(album => (
                   <li key={album.id} style={{ background: '#23263a', borderRadius: 10, padding: 16, minWidth: 180, textAlign: 'center', boxShadow: '0 1px 8px #0002' }}>
                     {album.images && album.images[0] && <img src={album.images[0].url} alt={album.name} style={{ width: 100, height: 100, borderRadius: 8, objectFit: 'cover', marginBottom: 8 }} />}
-                    <Link to={`/album/${encodeURIComponent(album.id)}`} style={{ color: '#a084ee', fontWeight: 700, cursor: 'pointer' }}>{album.name}</Link>
+                    <Link to={buildAlbumPath(section, album.id)} style={{ color: '#a084ee', fontWeight: 700, cursor: 'pointer' }}>{album.name}</Link>
                     <div style={{ color: '#7fd7ff', fontSize: 13 }}>{album.release_date}</div>
                     <button onClick={() => openReviewModal(album)} style={{ marginTop: 8 }}>Review</button>
                   </li>
@@ -163,41 +169,43 @@ const ArtistPage = ({ onAlbumRated }) => {
               </ul>
             </div>
           )}
-          {modalOpen && (
-            <div style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100vw',
-              height: '100vh',
-              background: 'rgba(0,0,0,0.7)',
-              zIndex: 1000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <div style={{ background: '#23263a', borderRadius: 16, padding: 32, minWidth: 320, boxShadow: '0 2px 24px #0008', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                <h3 style={{ color: '#a084ee', margin: 0 }}>Review Album</h3>
-                <div style={{ fontWeight: 600, color: '#7fd7ff', fontSize: 18 }}>{modalAlbum?.name}</div>
-                <div style={{ color: '#e0e6ed', marginBottom: 8 }}>{artist?.name}</div>
+          <Modal
+            open={modalOpen}
+            onClose={closeModal}
+            presentation="sheet"
+            eyebrow="Review"
+            title={modalAlbum?.name || 'Review album'}
+            description={artist?.name || 'Add your rating and a few thoughts.'}
+          >
+            <div className="search-add-modal__content">
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <StarRating value={modalRating} onChange={setModalRating} />
-                <textarea
-                  placeholder="Write a review..."
-                  value={modalReview}
-                  onChange={e => setModalReview(e.target.value)}
-                  style={{ width: 240, minHeight: 60, borderRadius: 8, border: '1px solid #7fd7ff', padding: 8, marginTop: 8 }}
-                />
-                {modalMessage && <div style={{ color: modalMessage.includes('saved') ? '#7fd7ff' : '#ff7f7f', marginTop: 8 }}>{modalMessage}</div>}
-                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                  <button onClick={handleReviewSave} disabled={modalSaving}>Save Review</button>
-                  <button onClick={closeModal} style={{ background: '#35384d', color: '#fff' }} disabled={modalSaving}>Cancel</button>
+              </div>
+              <TextField
+                as="textarea"
+                placeholder="Write a review..."
+                value={modalReview}
+                onChange={(e) => setModalReview(e.target.value)}
+              />
+              {modalMessage ? (
+                <div style={{ color: modalMessage.includes('saved') ? 'var(--color-accent)' : 'var(--color-danger)', textAlign: 'center' }}>
+                  {modalMessage}
                 </div>
+              ) : null}
+              <div className="search-add-modal__actions">
+                <Button type="button" onClick={handleReviewSave} loading={modalSaving} disabled={modalSaving}>
+                  Save review
+                </Button>
+                <Button type="button" variant="secondary" onClick={closeModal} disabled={modalSaving}>
+                  Cancel
+                </Button>
               </div>
             </div>
-          )}
+          </Modal>
         </>
       )}
-    </div>
+      </div>
+    </StackScreen>
   );
 };
 

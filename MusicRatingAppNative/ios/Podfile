@@ -1,4 +1,5 @@
 # Resolve react_native_pods.rb with node to allow for hoisting
+ENV['RCT_NEW_ARCH_ENABLED'] = '0'
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "react-native/scripts/react_native_pods.rb",
@@ -31,5 +32,28 @@ target 'MusicRatingAppNative' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    provider_path = File.join(__dir__, 'build', 'generated', 'ios', 'RCTThirdPartyComponentsProvider.mm')
+    if File.exist?(provider_path)
+      provider_source = File.read(provider_path)
+      provider_source.sub!(
+        "  dispatch_once(&nativeComponentsToken, ^{\n    thirdPartyComponents = @{",
+        "  dispatch_once(&nativeComponentsToken, ^{\n    NSMutableDictionary<NSString *, Class<RCTComponentViewProtocol>> *components = [NSMutableDictionary new];"
+      )
+      provider_source.gsub!(
+        /^\s+@"([^"]+)": NSClassFromString\(@"([^"]+)"\), \/\/ (.+)$/,
+        <<~'OBJC'.rstrip
+    Class<RCTComponentViewProtocol> $1Class = NSClassFromString(@"$2");
+    if ($1Class != nil) {
+      components[@"$1"] = $1Class; // $3
+    }
+        OBJC
+      )
+      provider_source.sub!(
+        "    };\n  });",
+        "    thirdPartyComponents = [components copy];\n  });"
+      )
+      File.write(provider_path, provider_source)
+    end
   end
 end

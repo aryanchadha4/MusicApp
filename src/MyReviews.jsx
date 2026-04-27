@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import ReactDOM from 'react-dom';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import API_BASE_URL from './config';
+import { useParams, Link } from 'react-router-dom';
+import { sortReviewsByDate } from './domain/models';
+import { StackScreen } from './lib/platform/web/app';
+import { Button, Modal, TextField } from './lib/platform/web/ui';
+import { musicClient } from './lib/api';
+import { useProfileLookup } from './hooks/useProfileLookup';
+import { buildAlbumPath, buildArtistPath } from './lib/navigation/appTabs';
 
 const StarRating = ({ value, onChange }) => {
   return (
@@ -24,8 +28,7 @@ const StarRating = ({ value, onChange }) => {
   );
 };
 
-const MyReviews = ({ user, profileInfo, isPublic }) => {
-  const navigate = useNavigate();
+const MyReviews = ({ user, profileInfo, isPublic, section = 'profile', backTo = '/profile' }) => {
   const { id } = useParams();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,42 +38,34 @@ const MyReviews = ({ user, profileInfo, isPublic }) => {
   const [editReview, setEditReview] = useState('');
   const [editRating, setEditRating] = useState(5);
   const [showDeleteIdx, setShowDeleteIdx] = useState(null);
+  const { profile: publicProfile, loading: publicLoading, error: publicError } = useProfileLookup({
+    id,
+    enabled: isPublic && Boolean(id),
+  });
 
   useEffect(() => {
-    const fetchReviews = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        let data;
-        if (isPublic) {
-          const res = await fetch(`${API_BASE_URL}/api/auth/profile?id=${id}`);
-          data = await res.json();
-        } else {
-          data = profileInfo;
-        }
-        setReviews((data.ratedAlbums || []).slice().sort((a, b) => new Date(b.reviewedAt) - new Date(a.reviewedAt)));
-      } catch (err) {
-        setError('Failed to load reviews.');
-      }
-      setLoading(false);
-    };
-    fetchReviews();
-    // eslint-disable-next-line
-  }, [id, isPublic, profileInfo]);
+    if (isPublic) {
+      setLoading(publicLoading);
+      setError(publicError || '');
+      const data = publicProfile;
+      setReviews(sortReviewsByDate(data?.ratedAlbums || []));
+      return;
+    }
+
+    setLoading(false);
+    setError('');
+    setReviews(sortReviewsByDate(profileInfo?.ratedAlbums || []));
+  }, [isPublic, profileInfo, publicError, publicLoading, publicProfile]);
 
   const handleDelete = async (review) => {
     setShowDeleteIdx(review.albumId);
   };
   const confirmDelete = async (review) => {
     try {
-      await fetch(`${API_BASE_URL}/api/auth/delete-review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, albumId: review.albumId })
-      });
+      await musicClient.deleteReview({ userId: user.id, albumId: review.albumId });
       setReviews(reviews => reviews.filter(r => r.albumId !== review.albumId));
       setShowDeleteIdx(null);
-    } catch (err) {
+    } catch {
       alert('Failed to delete review.');
       setShowDeleteIdx(null);
     }
@@ -84,31 +79,47 @@ const MyReviews = ({ user, profileInfo, isPublic }) => {
   };
   const saveEdit = async (item) => {
     try {
-      await fetch(`${API_BASE_URL}/api/auth/edit-review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, albumId: item.albumId, review: editReview, rating: editRating })
-      });
+      await musicClient.editReview({ userId: user.id, albumId: item.albumId, review: editReview, rating: editRating });
       setReviews(reviews => reviews.map(r => r.albumId === item.albumId ? { ...r, review: editReview, rating: editRating } : r));
       setEditIdx(null);
-    } catch (err) {
+    } catch {
       alert('Failed to edit review.');
     }
   };
   const cancelEdit = () => setEditIdx(null);
 
-  const showBackButton = (
-    <button onClick={() => navigate('/profile')} style={{ marginBottom: 16, background: 'linear-gradient(90deg, #7fd7ff 0%, #a084ee 100%)', color: '#181a20', border: 'none', borderRadius: 8, padding: '6px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer', boxShadow: '0 1px 8px #0002' }}>&larr; Back</button>
-  );
+  if (loading) {
+    return (
+      <StackScreen backTo={backTo} eyebrow="Reviews" title={isPublic ? 'User reviews' : 'My reviews'} subtitle="Loading review history…">
+        <p className="mobile-section-empty">Loading…</p>
+      </StackScreen>
+    );
+  }
 
-  if (loading) return <div style={{ maxWidth: 600, margin: '2em auto' }}>{showBackButton}<div style={{ color: '#7fd7ff', textAlign: 'center', marginTop: 40 }}>Loading...</div></div>;
-  if (error) return <div style={{ maxWidth: 600, margin: '2em auto' }}>{showBackButton}<div style={{ color: '#ff7f7f', textAlign: 'center', marginTop: 40 }}>{error}</div></div>;
-  if (!reviews.length) return <div style={{ maxWidth: 600, margin: '2em auto' }}>{showBackButton}<div style={{ color: '#aaa', textAlign: 'center', marginTop: 40 }}>No reviews yet.</div></div>;
+  if (error) {
+    return (
+      <StackScreen backTo={backTo} eyebrow="Reviews" title={isPublic ? 'User reviews' : 'My reviews'} subtitle="We could not load these reviews.">
+        <p className="mobile-section-error">{error}</p>
+      </StackScreen>
+    );
+  }
+
+  if (!reviews.length) {
+    return (
+      <StackScreen backTo={backTo} eyebrow="Reviews" title={isPublic ? 'User reviews' : 'My reviews'} subtitle="Review history in one stack-ready list view.">
+        <p className="mobile-section-empty">No reviews yet.</p>
+      </StackScreen>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: 600, margin: '2em auto' }}>
-      {showBackButton}
-      <h2 style={{ color: '#7fd7ff', textAlign: 'center', marginBottom: 24 }}>{isPublic ? 'User Reviews' : 'My Reviews'}</h2>
+    <StackScreen
+      backTo={backTo}
+      eyebrow="Reviews"
+      title={isPublic ? 'User reviews' : 'My reviews'}
+      subtitle="Review history in one stack-ready list view."
+    >
+      <div style={{ maxWidth: 600, margin: '0 auto' }}>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {reviews.map((item, idx) => (
           <li key={item.reviewedAt + item.albumName + idx} style={{ background: '#23263a', borderRadius: 12, padding: 20, marginBottom: 18, boxShadow: '0 1px 8px #0002', position: 'relative' }}>
@@ -116,11 +127,11 @@ const MyReviews = ({ user, profileInfo, isPublic }) => {
               {item.image && <img src={item.image} alt={item.albumName} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />}
               <div style={{ flex: 1 }}>
                 <Link
-                  to={`/album/${encodeURIComponent(item.albumId)}`}
+                  to={buildAlbumPath(section, item.albumId)}
                   style={{ color: '#a084ee', fontWeight: 700, fontSize: 18 }}
                 >
                   {item.albumName}
-                </Link> by <Link to={`/artist/${encodeURIComponent(item.artistId)}`} style={{ color: '#7fd7ff', fontWeight: 500, fontSize: 16 }}>{item.artist}</Link>: <b>{item.rating}/5</b>
+                </Link> by <Link to={buildArtistPath(section, item.artistId)} style={{ color: '#7fd7ff', fontWeight: 500, fontSize: 16 }}>{item.artist}</Link>: <b>{item.rating}/5</b>
                 <div style={{ color: '#aaa', fontSize: 13, marginTop: 2 }}>Reviewed on {item.reviewedAt ? new Date(item.reviewedAt).toLocaleDateString() : ''}</div>
               </div>
               {!isPublic && (
@@ -146,44 +157,54 @@ const MyReviews = ({ user, profileInfo, isPublic }) => {
         ))}
       </ul>
 
-      {/* Delete confirmation modal */}
-      {showDeleteIdx && ReactDOM.createPortal(
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#23263a', borderRadius: 16, padding: 32, minWidth: 320, boxShadow: '0 2px 24px #0008', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-            <h3 style={{ color: '#a084ee', margin: 0 }}>Delete Review</h3>
-            <div style={{ color: '#e0e6ed', marginBottom: 8 }}>Are you sure you want to delete this review?</div>
-            <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-              <button onClick={() => confirmDelete(reviews.find(r => r.albumId === showDeleteIdx))} style={{ background: '#ff7f7f', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 18px', fontWeight: 600, cursor: 'pointer' }}>Delete</button>
-              <button onClick={cancelDelete} style={{ background: '#35384d', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 18px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-            </div>
+      <Modal
+        open={Boolean(showDeleteIdx)}
+        onClose={cancelDelete}
+        presentation="sheet"
+        eyebrow="Reviews"
+        title="Delete review"
+        description="Remove this review from your profile activity."
+      >
+        <div className="search-add-modal__content">
+          <p className="search-add-modal__intro">Are you sure you want to delete this review?</p>
+          <div className="search-add-modal__actions">
+            <Button type="button" variant="danger" onClick={() => confirmDelete(reviews.find((r) => r.albumId === showDeleteIdx))}>
+              Delete
+            </Button>
+            <Button type="button" variant="secondary" onClick={cancelDelete}>
+              Cancel
+            </Button>
           </div>
-        </div>, document.body
-      )}
+        </div>
+      </Modal>
 
-      {/* Edit review modal */}
-      {editIdx !== null && ReactDOM.createPortal(
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#23263a', borderRadius: 16, padding: 32, minWidth: 320, boxShadow: '0 2px 24px #0008', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-            <h3 style={{ color: '#a084ee', margin: 0 }}>Edit Review</h3>
-            <div style={{ color: '#e0e6ed', marginBottom: 8 }}>Edit your review and rating below:</div>
-            <textarea
-              value={editReview}
-              onChange={e => setEditReview(e.target.value)}
-              style={{ width: 240, minHeight: 60, borderRadius: 8, border: '1px solid #7fd7ff', padding: 8, marginTop: 8 }}
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: '#aaa' }}>Rating:</span>
-              <StarRating value={editRating} onChange={setEditRating} />
-              <span style={{ color: '#aaa' }}>/5</span>
-            </div>
-            <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-              <button onClick={() => saveEdit(reviews[editIdx])} style={{ background: '#7fd7ff', color: '#181a20', border: 'none', borderRadius: 8, padding: '6px 18px', fontWeight: 600, cursor: 'pointer' }}>Save</button>
-              <button onClick={cancelEdit} style={{ background: '#35384d', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 18px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-            </div>
+      <Modal
+        open={editIdx !== null}
+        onClose={cancelEdit}
+        presentation="sheet"
+        eyebrow="Reviews"
+        title="Edit review"
+        description="Update your thoughts and rating in a compact review sheet."
+      >
+        <div className="search-add-modal__content">
+          <TextField as="textarea" value={editReview} onChange={(e) => setEditReview(e.target.value)} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--color-fg-muted)' }}>Rating</span>
+            <StarRating value={editRating} onChange={setEditRating} />
+            <span style={{ color: 'var(--color-fg-muted)' }}>/5</span>
           </div>
-        </div>, document.body
-      )}
-    </div>
+          <div className="search-add-modal__actions">
+            <Button type="button" onClick={() => saveEdit(reviews[editIdx])}>
+              Save
+            </Button>
+            <Button type="button" variant="secondary" onClick={cancelEdit}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      </div>
+    </StackScreen>
   );
 };
 
